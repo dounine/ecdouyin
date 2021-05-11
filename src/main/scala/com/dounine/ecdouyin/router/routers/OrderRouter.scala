@@ -6,7 +6,9 @@ import akka.cluster.sharding.typed.scaladsl.ClusterSharding
 import akka.http.scaladsl.server.Directives.{concat, _}
 import akka.http.scaladsl.server.Route
 import akka.stream._
+import akka.stream.scaladsl.Source
 import com.dounine.ecdouyin.behaviors.order.OrderBase
+import com.dounine.ecdouyin.behaviors.qrcode.QrcodeBehavior
 import com.dounine.ecdouyin.model.models.OrderModel
 import com.dounine.ecdouyin.model.types.service.{MechinePayStatus, PayStatus}
 import com.dounine.ecdouyin.service.{OrderService, UserService}
@@ -41,38 +43,58 @@ class OrderRouter(system: ActorSystem[_]) extends SuportRouter {
   val route: Route =
     concat(
       get {
-        path("balance") {
-          parameterMap {
-            querys =>
-              {
-                logger.info(querys.logJson)
-                val queryInfo = querys.toJson.jsonTo[OrderModel.Balance]
-                val result = userService
-                  .info(queryInfo.apiKey)
-                  .map {
-                    case Some(value) => {
-                      require(
-                        MD5Util.md5(
-                          value.apiSecret
-                        ) == queryInfo.sign,
-                        signInvalidMsg
-                      )
-                      ok(
-                        Map(
-                          "balance" -> value.balance,
-                          "margin" -> value.margin
-                        )
-                      )
-                    }
-                    case None => throw new Exception(apiKeyNotFound)
-                  }
-                onComplete(result) {
-                  case Failure(exception) => fail(exception.getMessage)
-                  case Success(value)     => value
-                }
-              }
+        path("order" / "qrcode") {
+          val sharding = ClusterSharding(system)
+          onComplete(
+            orderService
+              .infoOrder(1)
+              .flatMap(result => {
+                sharding
+                  .entityRefFor(
+                    QrcodeBehavior.typeKey,
+                    "1"
+                  )
+                  .ask(
+                    QrcodeBehavior.Create(result.get)
+                  )(20.seconds)
+              })
+          ) {
+            case Failure(exception) => throw exception
+            case Success(value)     => ok(value)
           }
-        } ~ path("order" / "info") {
+        } ~
+          path("balance") {
+            parameterMap {
+              querys =>
+                {
+                  logger.info(querys.logJson)
+                  val queryInfo = querys.toJson.jsonTo[OrderModel.Balance]
+                  val result = userService
+                    .info(queryInfo.apiKey)
+                    .map {
+                      case Some(value) => {
+                        require(
+                          MD5Util.md5(
+                            value.apiSecret
+                          ) == queryInfo.sign,
+                          signInvalidMsg
+                        )
+                        ok(
+                          Map(
+                            "balance" -> value.balance,
+                            "margin" -> value.margin
+                          )
+                        )
+                      }
+                      case None => throw new Exception(apiKeyNotFound)
+                    }
+                  onComplete(result) {
+                    case Failure(exception) => fail(exception.getMessage)
+                    case Success(value)     => value
+                  }
+                }
+            }
+          } ~ path("order" / "info") {
           parameterMap {
             querys =>
               {
@@ -145,7 +167,7 @@ class OrderRouter(system: ActorSystem[_]) extends SuportRouter {
                       if (
                         !order.money.matches(
                           "\\d+"
-                        ) || (order.money.toInt >= 6 && order.money.toInt <= 5000)
+                        ) || !(order.money.toInt >= 6 && order.money.toInt <= 5000)
                       ) {
                         throw new Exception("充值金额只能是[6 ~ 5000]之间的整数")
                       } else if (

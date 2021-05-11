@@ -28,7 +28,6 @@ class ChromeResource(system: ActorSystem[_]) extends JsonParse {
   ).materializer
   val chromeOptions: ChromeOptions = new ChromeOptions()
   chromeOptions.setHeadless(config.getBoolean("selenium.headless"))
-  chromeOptions.addArguments("--no-startup-window")
   val hubUrl: String = config.getString("selenium.remoteUrl")
   val webDriver = new RemoteWebDriver(new URL(hubUrl), chromeOptions)
   this.webDriver
@@ -44,13 +43,14 @@ class ChromeResource(system: ActorSystem[_]) extends JsonParse {
         config.getInt("selenium.size.height")
       )
     )
-  val dictionaryService = ServiceSingleton.get(classOf[DictionaryService])
+  this.webDriver.get("https://www.douyin.com/falcon/webcast_openpc/pages/douyin_recharge/index.html?is_new_connect=0&is_new_user=0")
 
   def driver(cookieName: String): Future[RemoteWebDriver] = {
-    dictionaryService
+    ServiceSingleton.get(classOf[DictionaryService])
       .info(cookieName)
       .map {
         case Some(cookie) => {
+          logger.info(s"chrome driver set cookie ${cookieName}")
           val maps: Map[String, String] =
             cookie.text.jsonTo[Map[String, String]]
           val executeMethod = new RemoteExecuteMethod(this.webDriver)
@@ -73,14 +73,19 @@ class ChromeResource(system: ActorSystem[_]) extends JsonParse {
           this.webDriver.get(
             "https://www.douyin.com/falcon/webcast_openpc/pages/douyin_recharge/index.html?is_new_connect=0&is_new_user=0"
           )
-          this.webDriver.navigate().refresh()
           this.webDriver
         }
         case None => {
-          logger.warn(s"${cookieName} not found")
+          logger.error(s"${cookieName} not found")
           this.webDriver
         }
       }(system.executionContext)
+  }
+  def refresh(): Unit = {
+    logger.info("chrome refresh")
+    this.webDriver.get(
+      "https://www.douyin.com/falcon/webcast_openpc/pages/douyin_recharge/index.html?is_new_connect=0&is_new_user=0"
+    )
   }
   def driver(): RemoteWebDriver = this.webDriver
 

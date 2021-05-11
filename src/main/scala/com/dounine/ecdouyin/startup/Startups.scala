@@ -10,7 +10,11 @@ import com.dounine.ecdouyin.behaviors.mechine.{MechineBase, MechineBehavior}
 import com.dounine.ecdouyin.behaviors.order.{OrderBase, OrderBehavior}
 import com.dounine.ecdouyin.behaviors.qrcode.QrcodeBehavior
 import com.dounine.ecdouyin.model.models.UserModel
-import com.dounine.ecdouyin.service.{OrderService, UserService}
+import com.dounine.ecdouyin.service.{
+  DictionaryService,
+  OrderService,
+  UserService
+}
 import com.dounine.ecdouyin.store.{
   AkkaPersistenerJournalTable,
   AkkaPersistenerSnapshotTable,
@@ -18,6 +22,7 @@ import com.dounine.ecdouyin.store.{
   OrderTable,
   UserTable
 }
+import com.dounine.ecdouyin.tools.akka.chrome.ChromePools
 import com.dounine.ecdouyin.tools.akka.db.DataSource
 import com.dounine.ecdouyin.tools.util.ServiceSingleton
 import org.slf4j.LoggerFactory
@@ -78,6 +83,13 @@ class Startups(system: ActorSystem[_]) {
 
     ServiceSingleton.put(classOf[OrderService], new OrderService(system))
     ServiceSingleton.put(classOf[UserService], new UserService(system))
+    ServiceSingleton.put(
+      classOf[DictionaryService],
+      new DictionaryService(system)
+    )
+    ChromePools(system).pools
+      .returnObject(ChromePools(system).pools.borrowObject())
+
     import slick.jdbc.MySQLProfile.api._
     val db = DataSource(system).source().db
     val schemas = Seq(

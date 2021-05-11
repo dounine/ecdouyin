@@ -5,6 +5,7 @@ import akka.actor.CoordinatedShutdown
 import akka.actor.typed.ActorSystem
 import akka.cluster.sharding.typed.scaladsl.ClusterSharding
 import com.dounine.ecdouyin.behaviors.order.OrderBase
+import com.dounine.ecdouyin.tools.akka.chrome.ChromePools
 import com.dounine.ecdouyin.tools.akka.db.DataSource
 
 import scala.concurrent.Future
@@ -38,6 +39,17 @@ class Shutdowns(system: ActorSystem[_]) {
             Done
           }
         }
+      }
+
+    CoordinatedShutdown(system)
+      .addTask(CoordinatedShutdown.PhaseBeforeServiceUnbind, "closeChrome") {
+        () =>
+          {
+            Future {
+              ChromePools(system).pools.close()
+              Done
+            }
+          }
       }
 
   }
