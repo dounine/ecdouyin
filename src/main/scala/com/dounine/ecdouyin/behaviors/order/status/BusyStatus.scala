@@ -51,8 +51,12 @@ object BusyStatus extends JsonParse {
         defaultCommand: (State, BaseSerializer) => Effect[BaseSerializer, State]
     ) =>
       command match {
-        case e @ WebPaySuccess(order) => {
+        case e @ WebPaySuccess(_order) => {
           logger.info(command.logJson)
+          val order = state.data.handOrders
+            .find(_._1 == _order.orderId)
+            .get
+            ._2
           Effect
             .persist(command)
             .thenRun((latest: State) => {
@@ -101,8 +105,13 @@ object BusyStatus extends JsonParse {
               }
             })
         }
-        case e@WebPayFail(order, msg) => {
+        case e @ WebPayFail(_order, msg) => {
           logger.error(command.logJson)
+          val order = state.data.handOrders
+            .find(_._1 == _order.orderId)
+            .get
+            ._2
+
           val updateOrder = order.copy(
             payCount = order.payCount + 1,
             margin = if (order.payCount >= 2) {
@@ -114,8 +123,18 @@ object BusyStatus extends JsonParse {
           )
           Effect
             .persist(WebPayFail(updateOrder, msg))
-            .thenRun((latestState: State) => {
-              if(updateOrder.status == PayStatus.payerr){
+            .thenRun((latest: State) => {
+              if (
+                latest.data.waitOrders.nonEmpty && timers
+                  .isTimerActive(intervalName)
+              ) {
+                timers.startTimerAtFixedRate(
+                  intervalName,
+                  Interval(),
+                  3.seconds
+                )
+              }
+              if (updateOrder.status == PayStatus.payerr) {
                 context.pipeToSelf(
                   userService.info(order.apiKey)
                 ) {
@@ -197,7 +216,7 @@ object BusyStatus extends JsonParse {
         }
         case UpdateOk(order, _) => {
           logger.info(command.logJson)
-          Effect.none
+          Effect.persist(command)
         }
         case UpdateFail(_, _, _) => {
           logger.error(command.logJson)
@@ -207,7 +226,7 @@ object BusyStatus extends JsonParse {
           logger.info(command.logJson)
           Effect
             .persist(command)
-            .thenRun((latestState: State) => {
+            .thenRun((latest: State) => {
               val updateOrder = order.copy(
                 mechineStatus = MechinePayStatus.payed
               )
@@ -235,11 +254,11 @@ object BusyStatus extends JsonParse {
           )
           Effect
             .persist(MechineBase.OrderPayFail(updateOrder, status))
-            .thenRun((latestState: State) => {
+            .thenRun((latest: State) => {
               context.pipeToSelf(
                 orderService.updateMechineStatus(
                   order.orderId,
-                  MechinePayStatus.payerr
+                  updateOrder.mechineStatus
                 )
               ) {
                 case Failure(exception) =>
@@ -264,8 +283,8 @@ object BusyStatus extends JsonParse {
           } else
             Effect
               .persist(command)
-              .thenRun((latestState: State) => {
-                latestState.data.mechines.foreach(id => {
+              .thenRun((latest: State) => {
+                latest.data.mechines.foreach(id => {
                   sharding
                     .entityRefFor(
                       MechineBase.typeKey,
@@ -297,9 +316,14 @@ object BusyStatus extends JsonParse {
           logger.info(command.logJson)
           Effect
             .persist(command)
-            .thenRun((latestState: State) => {
+            .thenRun((latest: State) => {
+              logger.info(
+                "time {}",
+                timers
+                  .isTimerActive(intervalName)
+              )
               if (
-                latestState.data.waitOrders.nonEmpty && !timers
+                latest.data.waitOrders.nonEmpty && !timers
                   .isTimerActive(intervalName)
               ) {
                 timers.startTimerAtFixedRate(
@@ -395,9 +419,7 @@ object BusyStatus extends JsonParse {
                   state.data.waitOrders
                 } else {
                   state.data.waitOrders ++ Map(
-                    order.orderId -> order.copy(
-                      payCount = order.payCount
-                    )
+                    order.orderId -> order
                   )
                 },
                 handOrders =
@@ -412,6 +434,7 @@ object BusyStatus extends JsonParse {
                   if (item._1 == order.orderId) {
                     item.copy(
                       _2 = item._2.copy(
+                        //更新机器返回状态
                         mechineStatus = MechinePayStatus.payed
                       )
                     )
@@ -427,7 +450,8 @@ object BusyStatus extends JsonParse {
                   if (item._1 == order.orderId) {
                     item.copy(
                       _2 = item._2.copy(
-                        mechineStatus = MechinePayStatus.payerr
+                        //更新机器返回状态
+                        mechineStatus = order.mechineStatus
                       )
                     )
                   } else item
@@ -459,6 +483,10 @@ object BusyStatus extends JsonParse {
           case MechineBase.CreateOrderOk(request) => {
             Busy(
               state.data.copy(
+                lockedOrders =
+                  state.data.lockedOrders.filterNot(_ == request.order.orderId),
+                lockedMechines =
+                  state.data.lockedMechines.filterNot(_ == request.mechineId),
                 waitOrders = state.data.waitOrders
                   .filterNot(_._1 == request.order.orderId),
                 handOrders =
@@ -471,6 +499,10 @@ object BusyStatus extends JsonParse {
           case MechineBase.CreateOrderFail(request, msg) => {
             Busy(
               state.data.copy(
+                lockedOrders =
+                  state.data.lockedOrders.filterNot(_ == request.order.orderId),
+                lockedMechines =
+                  state.data.lockedMechines.filterNot(_ == request.mechineId),
                 waitOrders = state.data.waitOrders ++ Map(
                   request.order.orderId -> request.order
                 ),
@@ -479,7 +511,21 @@ object BusyStatus extends JsonParse {
               )
             )
           }
-
+          case UpdateOk(before, after) => {
+            Idle(
+              state.data.copy(
+                handOrders = state.data.handOrders.map(item => {
+                  if (item._1 == after.orderId) {
+                    item.copy(
+                      _2 = item._2.copy(
+                        mechineStatus = after.mechineStatus
+                      )
+                    )
+                  } else item
+                })
+              )
+            )
+          }
           case CancelSelfOk(request) => {
             Busy(
               state.data.copy(

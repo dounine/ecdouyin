@@ -4,7 +4,11 @@ import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import akka.actor.typed.{Behavior, PreRestart, SupervisorStrategy}
 import akka.cluster.sharding.typed.scaladsl.ClusterSharding
 import akka.persistence.typed._
-import akka.persistence.typed.scaladsl.{Effect, EventSourcedBehavior, RetentionCriteria}
+import akka.persistence.typed.scaladsl.{
+  Effect,
+  EventSourcedBehavior,
+  RetentionCriteria
+}
 import com.dounine.ecdouyin.behaviors.client.SocketBehavior
 import com.dounine.ecdouyin.behaviors.mechine.MechineBase._
 import com.dounine.ecdouyin.behaviors.mechine.status.ConnectedStatus.logger
@@ -71,7 +75,7 @@ object MechineBehavior extends JsonParse {
                 timers.startSingleTimer(
                   timeoutName,
                   SocketTimeout(Option.empty),
-                  state.data.orderTimeout
+                  state.data.mechineTimeout
                 )
                 sharding
                   .entityRefFor(
@@ -79,7 +83,9 @@ object MechineBehavior extends JsonParse {
                     OrderBase.typeKey.name
                   )
                   .tell(
-                    CreateOrderOk(CreateOrder(request.order)(null))
+                    CreateOrderOk(
+                      CreateOrder(request.order, state.data.mechineId)(null)
+                    )
                   )
                 latest.data.actor.foreach(
                   _.tell(
@@ -90,7 +96,7 @@ object MechineBehavior extends JsonParse {
                       money = order.money,
                       volume = order.volumn,
                       platform = order.platform,
-                      timeout = state.data.orderTimeout
+                      timeout = state.data.appTimeout
                     )
                   )
                 )
@@ -105,11 +111,14 @@ object MechineBehavior extends JsonParse {
                     OrderBase.typeKey.name
                   )
                   .tell(
-                    CreateOrderFail(CreateOrder(request.order)(null), msg)
+                    CreateOrderFail(
+                      CreateOrder(request.order, state.data.mechineId)(null),
+                      msg
+                    )
                   )
               })
             }
-            case e @ CreateOrder(order) => {
+            case e @ CreateOrder(order, mechineId) => {
               logger.info(command.logJson)
               state.data.order match {
                 case Some(order) =>
@@ -278,7 +287,7 @@ object MechineBehavior extends JsonParse {
             case SocketQrcodeChoose() => {
               QrcodeChoose(state.data)
             }
-            case CreateOrder(order) => {
+            case CreateOrder(order, mechineId) => {
               Connected(
                 state.data.copy(
                   order = Option(order)
@@ -333,6 +342,7 @@ object MechineBehavior extends JsonParse {
             case SocketTimeout(screen) => {
               Timeout(
                 state.data.copy(
+                  order = None,
                   errors = state.data.errors.copy(
                     timeout = screen
                   )
@@ -370,7 +380,8 @@ object MechineBehavior extends JsonParse {
               actor = Option.empty,
               order = Option.empty,
               errors = ErrorInfo(),
-              orderTimeout = 30.seconds
+              mechineTimeout = 50.seconds,
+              appTimeout = 20.seconds
             )
           ),
           commandHandler = commandHandler,
@@ -387,9 +398,9 @@ object MechineBehavior extends JsonParse {
           )
           .receiveSignal({
             case (state, RecoveryCompleted) =>
-              logger.debug(
+              logger.info(
                 "Recovery Completed with state: {}",
-                state
+                state.toJson
               )
             case (state, RecoveryFailed(err)) =>
               logger.error(

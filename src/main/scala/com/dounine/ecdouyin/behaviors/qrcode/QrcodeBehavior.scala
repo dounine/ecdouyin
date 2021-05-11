@@ -6,6 +6,7 @@ import akka.cluster.sharding.typed.scaladsl.{ClusterSharding, EntityTypeKey}
 import akka.persistence.typed.PersistenceId
 import akka.stream.SystemMaterializer
 import akka.stream.scaladsl.{Sink, Source}
+import akka.stream.typed.scaladsl.ActorSink
 import com.dounine.ecdouyin.behaviors.mechine.MechineBase
 import com.dounine.ecdouyin.behaviors.order.OrderBase
 import com.dounine.ecdouyin.model.models.{BaseSerializer, OrderModel}
@@ -307,29 +308,52 @@ object QrcodeBehavior extends JsonParse {
               logger.info(e.logJson)
               Behaviors.stopped
             }
+            case e@OrderBase.WebPaySuccess(order) => {
+              logger.info(e.logJson)
+              sharding
+                .entityRefFor(
+                  OrderBase.typeKey,
+                  OrderBase.typeKey.name
+                )
+                .tell(e)
+              Behaviors.stopped
+            }
+            case e@OrderBase.WebPayFail(order,msg) => {
+              logger.info(e.logJson)
+              sharding
+                .entityRefFor(
+                  OrderBase.typeKey,
+                  OrderBase.typeKey.name
+                )
+                .tell(e)
+              Behaviors.stopped
+            }
             case e @ QrcodeOk(order, qrcode) => {
               logger.info(e.logJson)
               Source(1 to 60)
                 .throttle(1, 1.seconds)
-                .map(_ => chromeResource.get.webDriver.getCurrentUrl)
+                .map(_ => {
+                  chromeResource.get.webDriver.getCurrentUrl
+                })
                 .filter(_.contains("result?app_id"))
-                .take(1)
                 .map(_ => {
                   OrderBase.WebPaySuccess(order)
                 })
+                .take(1)
+                .orElse(Source.single(OrderBase.WebPayFail(order, "not pay")))
                 .recover {
                   case e: Throwable => {
                     OrderBase.WebPayFail(order, e.getMessage)
                   }
                 }
                 .runForeach(result => {
-                  context.self.tell(Shutdown)
                   sharding
                     .entityRefFor(
                       OrderBase.typeKey,
                       OrderBase.typeKey.name
                     )
                     .tell(result)
+                  context.self.tell(Shutdown)
                 })
               Behaviors.same
             }

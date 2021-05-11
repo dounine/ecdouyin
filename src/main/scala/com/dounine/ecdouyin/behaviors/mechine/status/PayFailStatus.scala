@@ -45,6 +45,7 @@ object PayFailStatus extends JsonParse {
       command match {
         case SocketTimeout(screen) => {
           logger.info(command.logJson)
+          timers.cancel(timeoutName)
           Effect.none
         }
         case _ => defaultCommand(state, command)

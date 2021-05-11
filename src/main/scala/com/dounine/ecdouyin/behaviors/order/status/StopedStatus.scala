@@ -60,7 +60,7 @@ object StopedStatus extends JsonParse {
           logger.info(command.logJson)
           Effect
             .persist(command)
-            .thenRun((latestState: State) => {
+            .thenRun((latest: State) => {
               val updateOrder = order.copy(
                 status = PayStatus.payed
               )
@@ -90,7 +90,7 @@ object StopedStatus extends JsonParse {
           )
           Effect
             .persist(MechineBase.OrderPayFail(updateOrder, status))
-            .thenRun((latestState: State) => {
+            .thenRun((latest: State) => {
               context.pipeToSelf(
                 orderService.update(
                   updateOrder
@@ -112,8 +112,8 @@ object StopedStatus extends JsonParse {
           if (state.data.mechines.isEmpty) {
             Effect.stop()
           } else
-            Effect.none.thenRun((latestState: State) => {
-              latestState.data.mechines.foreach(id => {
+            Effect.none.thenRun((latest: State) => {
+              latest.data.mechines.foreach(id => {
                 sharding
                   .entityRefFor(
                     MechineBase.typeKey,

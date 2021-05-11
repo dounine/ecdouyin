@@ -64,20 +64,23 @@ object OrderBehavior extends JsonParse {
                   apiSecret,
                   msg
                 ) => {
+              logger.info(command.logJson)
               Effect.none.thenRun((latest: State) => {
-                context.pipeToSelf {
-                  orderService.callback(
-                    order = order,
-                    status = status,
-                    callback = callback,
-                    apiSecret = apiSecret,
-                    msg = msg
-                  )
-                } {
-                  case Failure(exception) =>
-                    CallbackFail(request = e, msg = exception.getMessage)
-                  case Success(value) => CallbackOk(e)
-                }
+                callback.foreach(cb => {
+                  context.pipeToSelf {
+                    orderService.callback(
+                      order = order,
+                      status = status,
+                      callback = cb,
+                      apiSecret = apiSecret,
+                      msg = msg
+                    )
+                  } {
+                    case Failure(exception) =>
+                      CallbackFail(request = e, msg = exception.getMessage)
+                    case Success(value) => CallbackOk(e)
+                  }
+                })
               })
             }
             case IgnoreEvent(_, _) => {
@@ -125,6 +128,8 @@ object OrderBehavior extends JsonParse {
               mechines = Set.empty,
               waitOrders = Map.empty,
               handOrders = Map.empty,
+              lockedOrders = Set.empty,
+              lockedMechines = Set.empty,
               shutdown = Option.empty
             )
           ),
@@ -142,9 +147,9 @@ object OrderBehavior extends JsonParse {
           )
           .receiveSignal({
             case (state, RecoveryCompleted) =>
-              logger.debug(
+              logger.info(
                 "Recovery Completed with state: {}",
-                state
+                state.toJson
               )
             case (state, RecoveryFailed(err)) =>
               logger.error(

@@ -91,7 +91,7 @@ class OrderService(system: ActorSystem[_]) extends EnumMappers {
   def callback(
       order: OrderModel.DbInfo,
       status: PayStatus,
-      callback: Option[String],
+      callback: String,
       apiSecret: String,
       msg: Option[String]
   ): Future[String] = {
@@ -111,7 +111,7 @@ class OrderService(system: ActorSystem[_]) extends EnumMappers {
             http
               .singleRequest(
                 request = HttpRequest(
-                  uri = callback.get,
+                  uri = callback,
                   method = HttpMethods.POST,
                   entity = HttpEntity(
                     contentType = MediaTypes.`application/json`,

@@ -24,7 +24,8 @@ object MechineBase {
       actor: Option[ActorRef[BaseSerializer]],
       order: Option[OrderModel.DbInfo],
       errors: ErrorInfo,
-      orderTimeout: FiniteDuration
+      mechineTimeout: FiniteDuration,
+      appTimeout: FiniteDuration
   ) extends BaseSerializer
 
   abstract class State() extends BaseSerializer {
@@ -88,7 +89,8 @@ object MechineBase {
   final case class Recovery() extends Command
 
   final case class CreateOrder(
-      order: OrderModel.DbInfo
+      order: OrderModel.DbInfo,
+      mechineId: String
   )(val replyTo: ActorRef[BaseSerializer])
       extends Command
 

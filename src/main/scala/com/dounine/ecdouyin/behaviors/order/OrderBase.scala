@@ -17,6 +17,8 @@ object OrderBase {
       mechines: Set[String],
       waitOrders: Map[Long, OrderModel.DbInfo],
       handOrders: Map[Long, OrderModel.DbInfo],
+      lockedOrders: Set[Long],
+      lockedMechines: Set[String],
       shutdown: Option[ActorRef[Done]]
   ) extends BaseSerializer
 
@@ -94,6 +96,9 @@ object OrderBase {
   final case class CreateFail(msg: String) extends Command
 
   final case class Interval() extends Command
+
+  final case class Locked(order: OrderModel.DbInfo, mechineId: String)
+      extends Command
 
   final case class WebPaySuccess(
       order: OrderModel.DbInfo

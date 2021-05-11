@@ -86,6 +86,8 @@ object ShutdowningStatus extends JsonParse {
                 mechines = Set.empty,
                 waitOrders = Map.empty,
                 handOrders = Map.empty,
+                lockedOrders = Set.empty,
+                lockedMechines = Set.empty,
                 shutdown = Option.empty
               )
             )

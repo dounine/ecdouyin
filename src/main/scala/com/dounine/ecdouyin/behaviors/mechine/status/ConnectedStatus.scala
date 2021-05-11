@@ -51,20 +51,24 @@ object ConnectedStatus extends JsonParse {
       command match {
         case SocketTimeout(screen) => {
           logger.info(command.logJson)
+          timers.cancel(timeoutName)
+          val order = state.data.order
           Effect
             .persist(command)
             .thenRun((latest: State) => {
-              sharding
-                .entityRefFor(
-                  OrderBase.typeKey,
-                  OrderBase.typeKey.name
-                )
-                .tell(
-                  OrderPayFail(
-                    order = latest.data.order.get,
-                    status = MechineStatus.connected
+              order.foreach(o => {
+                sharding
+                  .entityRefFor(
+                    OrderBase.typeKey,
+                    OrderBase.typeKey.name
                   )
-                )
+                  .tell(
+                    OrderPayFail(
+                      order = o,
+                      status = MechineStatus.connected
+                    )
+                  )
+              })
               sharding
                 .entityRefFor(
                   OrderBase.typeKey,

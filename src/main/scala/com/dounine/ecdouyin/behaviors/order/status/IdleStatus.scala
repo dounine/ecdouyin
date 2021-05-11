@@ -50,8 +50,12 @@ object IdleStatus extends JsonParse {
         defaultCommand: (State, BaseSerializer) => Effect[BaseSerializer, State]
     ) =>
       command match {
-        case e @ WebPaySuccess(order) => {
+        case e @ WebPaySuccess(_order) => {
           logger.info(command.logJson)
+          val order = state.data.handOrders
+            .find(_._1 == _order.orderId)
+            .get
+            ._2
           Effect
             .persist(command)
             .thenRun((latest: State) => {
@@ -119,20 +123,40 @@ object IdleStatus extends JsonParse {
               }
             })
         }
-        case WebPayFail(order, msg) => {
+        case WebPayFail(_order, msg) => {
           logger.error(command.logJson)
-          val updateOrder = order.copy(
-            payCount = order.payCount + 1,
-            margin = if (order.payCount >= 2) {
-              BigDecimal("0.00")
-            } else order.margin,
-            status = if (order.payCount >= 2) {
-              PayStatus.payerr
-            } else order.status
-          )
+          val order = state.data.handOrders
+            .find(_._1 == _order.orderId)
+            .get
+            ._2
+          val updateOrder = order
+            .copy(
+              payCount = order.payCount + 1,
+              margin = if (order.payCount >= 2) {
+                BigDecimal("0.00")
+              } else order.margin,
+              status = if (order.payCount >= 2) {
+                PayStatus.payerr
+              } else order.status
+            )
           Effect
             .persist(WebPayFail(updateOrder, msg))
-            .thenRun((latestState: State) => {
+            .thenRun((latest: State) => {
+              logger.info(
+                "state -> {} {}",
+                timers.isTimerActive(intervalName),
+                latest.toJson
+              )
+              if (
+                latest.data.waitOrders.nonEmpty && !timers
+                  .isTimerActive(intervalName)
+              ) {
+                timers.startTimerAtFixedRate(
+                  intervalName,
+                  Interval(),
+                  3.seconds
+                )
+              }
               context.pipeToSelf(
                 orderService
                   .update(
@@ -204,7 +228,7 @@ object IdleStatus extends JsonParse {
         }
         case UpdateOk(_, _) => {
           logger.info(command.logJson)
-          Effect.none
+          Effect.persist(command)
         }
         case UpdateFail(_, _, _) => {
           logger.error(command.logJson)
@@ -243,11 +267,11 @@ object IdleStatus extends JsonParse {
           )
           Effect
             .persist(MechineBase.OrderPayFail(updateOrder, status))
-            .thenRun((latestState: State) => {
+            .thenRun((latest: State) => {
               context.pipeToSelf(
                 orderService.updateMechineStatus(
                   order.orderId,
-                  MechinePayStatus.payerr
+                  updateOrder.mechineStatus
                 )
               ) {
                 case Failure(exception) =>
@@ -269,8 +293,8 @@ object IdleStatus extends JsonParse {
           } else
             Effect
               .persist(command)
-              .thenRun((latestState: State) => {
-                latestState.data.mechines.foreach(id => {
+              .thenRun((latest: State) => {
+                latest.data.mechines.foreach(id => {
                   sharding
                     .entityRefFor(
                       MechineBase.typeKey,
@@ -288,18 +312,43 @@ object IdleStatus extends JsonParse {
         }
         case Interval() => {
           logger.info(command.logJson)
-          Effect.none.thenRun((latest: State) => {
-            if (latest.data.waitOrders.nonEmpty) {
-              val order = latest.data.waitOrders.values.toList
-                .minBy(_.createTime)
-              context.self.tell(
-                OrderHand(
-                  order = order,
-                  mechineId = latest.data.mechines.head
-                )
-              )
-            }
-          })
+          val idleOrders = state.data.waitOrders.values
+            .filterNot(i => state.data.lockedOrders.contains(i.orderId))
+          val idleMechines = state.data.mechines.diff(state.data.lockedMechines)
+          if (idleOrders.nonEmpty && idleMechines.nonEmpty) {
+            val order = idleOrders
+              .minBy(_.createTime)
+            val mechineId = idleMechines.head
+            Effect
+              .persist(Locked(order = order, mechineId = mechineId))
+              .thenRun((latest: State) => {
+                sharding
+                  .entityRefFor(
+                    MechineBase.typeKey,
+                    mechineId
+                  )
+                  .tell(
+                    MechineBase.CreateOrder(
+                      order = order,
+                      mechineId = mechineId
+                    )(context.self)
+                  )
+              })
+          } else Effect.none
+//          Effect
+//            .persist()
+//            .thenRun((latest: State) => {
+//              if (latest.data.waitOrders.nonEmpty) {
+//                val order = latest.data.waitOrders.values.toList
+//                  .minBy(_.createTime)
+//                context.self.tell(
+//                  OrderHand(
+//                    order = order,
+//                    mechineId = latest.data.mechines.head
+//                  )
+//                )
+//              }
+//            })
         }
         case e @ MechineBase.Enable(_) => {
           logger.info(command.logJson)
@@ -331,22 +380,23 @@ object IdleStatus extends JsonParse {
               }
             })
         }
-        case OrderHand(order, mechineId) => {
-          logger.info(command.logJson)
-          Effect.none
-            .thenRun((latestState: State) => {
-              sharding
-                .entityRefFor(
-                  MechineBase.typeKey,
-                  mechineId
-                )
-                .tell(
-                  MechineBase.CreateOrder(
-                    order = order
-                  )(context.self)
-                )
-            })
-        }
+//        case OrderHand(order, mechineId) => {
+//          logger.info(command.logJson)
+//          Effect.none
+//            .thenRun((latest: State) => {
+//              sharding
+//                .entityRefFor(
+//                  MechineBase.typeKey,
+//                  mechineId
+//                )
+//                .tell(
+//                  MechineBase.CreateOrder(
+//                    order = order,
+//                    mechineId = mechineId
+//                  )(context.self)
+//                )
+//            })
+//        }
         case MechineBase.CreateOrderOk(request) => {
           logger.info(command.logJson)
           Effect.persist(command)
@@ -432,9 +482,7 @@ object IdleStatus extends JsonParse {
                   state.data.waitOrders
                 } else {
                   state.data.waitOrders ++ Map(
-                    order.orderId -> order.copy(
-                      payCount = order.payCount
-                    )
+                    order.orderId -> order
                   )
                 },
                 handOrders =
@@ -472,6 +520,14 @@ object IdleStatus extends JsonParse {
               )
             )
           }
+          case e @ Locked(order, mechineId) => {
+            Idle(
+              state.data.copy(
+                lockedOrders = state.data.lockedOrders ++ Set(order.orderId),
+                lockedMechines = state.data.lockedMechines ++ Set(mechineId)
+              )
+            )
+          }
           case e @ Shutdown() => {
             Shutdowning(
               state.data.copy(
@@ -505,6 +561,10 @@ object IdleStatus extends JsonParse {
           case MechineBase.CreateOrderOk(request) => {
             Idle(
               state.data.copy(
+                lockedOrders =
+                  state.data.lockedOrders.filterNot(_ == request.order.orderId),
+                lockedMechines =
+                  state.data.lockedMechines.filterNot(_ == request.mechineId),
                 waitOrders = state.data.waitOrders
                   .filterNot(_._1 == request.order.orderId),
                 handOrders =
@@ -517,11 +577,30 @@ object IdleStatus extends JsonParse {
           case MechineBase.CreateOrderFail(request, msg) => {
             Idle(
               state.data.copy(
+                lockedOrders =
+                  state.data.lockedOrders.filterNot(_ == request.order.orderId),
+                lockedMechines =
+                  state.data.lockedMechines.filterNot(_ == request.mechineId),
                 waitOrders = state.data.waitOrders ++ Map(
                   request.order.orderId -> request.order
                 ),
                 handOrders =
                   state.data.handOrders.filterNot(_._1 == request.order.orderId)
+              )
+            )
+          }
+          case UpdateOk(before, after) => {
+            Idle(
+              state.data.copy(
+                handOrders = state.data.handOrders.map(item => {
+                  if (item._1 == after.orderId) {
+                    item.copy(
+                      _2 = item._2.copy(
+                        mechineStatus = after.mechineStatus
+                      )
+                    )
+                  } else item
+                })
               )
             )
           }
