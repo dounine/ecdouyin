@@ -49,90 +49,11 @@ object ConnectedStatus extends JsonParse {
         defaultCommand: (State, BaseSerializer) => Effect[BaseSerializer, State]
     ) =>
       command match {
-        case QrcodeQuery(order) => {
-          logger.info(command.logJson)
-          Effect.none.thenRun((latest: State) => {
-            sharding
-              .entityRefFor(
-                QrcodeBehavior.typeKey,
-                order.orderId.toString
-              )
-              .tell(
-                QrcodeBehavior.Create(order)(context.self)
-              )
-          })
-        }
-        case QrcodeBehavior.CreateOk(request, qrcode) => {
-          logger.info(command.logJson)
-          val order = request.order
-          Effect.none.thenRun((latest: State) => {
-            timers.startSingleTimer(
-              timeoutName,
-              SocketTimeout(Option.empty),
-              state.data.orderTimeout
-            )
-            sharding
-              .entityRefFor(
-                OrderBase.typeKey,
-                OrderBase.typeKey.name
-              )
-              .tell(
-                CreateOrderOk(CreateOrder(request.order)(null))
-              )
-            latest.data.actor.foreach(
-              _.tell(
-                SocketBehavior.OrderCreate(
-                  image = qrcode,
-                  domain = domain,
-                  orderId = order.orderId,
-                  money = order.money,
-                  volume = order.volumn,
-                  platform = order.platform,
-                  timeout = state.data.orderTimeout
-                )
-              )
-            )
-          })
-        }
-        case QrcodeBehavior.CreateFail(request, msg) => {
-          logger.error(command.logJson)
-          Effect.none.thenRun((latest: State) => {
-            sharding
-              .entityRefFor(
-                OrderBase.typeKey,
-                OrderBase.typeKey.name
-              )
-              .tell(
-                CreateOrderFail(CreateOrder(request.order)(null), msg)
-              )
-          })
-        }
-        case e @ CreateOrder(order) => {
-          logger.info(command.logJson)
-          state.data.order match {
-            case Some(order) =>
-              Effect.none.thenRun((latest: State) => {
-                e.replyTo.tell(CreateOrderFail(e, "order exit"))
-              })
-            case None => {
-              Effect
-                .persist(command)
-                .thenRun((latestState: State) => {
-                  context.self.tell(
-                    QrcodeQuery(order)
-                  )
-                  e.replyTo.tell(
-                    Disable(latestState.data.mechineId)
-                  )
-                })
-            }
-          }
-        }
         case SocketTimeout(screen) => {
           logger.info(command.logJson)
           Effect
             .persist(command)
-            .thenRun((latestState: State) => {
+            .thenRun((latest: State) => {
               sharding
                 .entityRefFor(
                   OrderBase.typeKey,
@@ -140,7 +61,7 @@ object ConnectedStatus extends JsonParse {
                 )
                 .tell(
                   OrderPayFail(
-                    order = latestState.data.order.get,
+                    order = latest.data.order.get,
                     status = MechineStatus.connected
                   )
                 )
@@ -151,7 +72,7 @@ object ConnectedStatus extends JsonParse {
                 )
                 .tell(
                   Enable(
-                    latestState.data.mechineId
+                    latest.data.mechineId
                   )
                 )
             })

@@ -85,6 +85,7 @@ class UserTableTest
         apiSecret = "abc",
         balance = BigDecimal("0.00"),
         margin = BigDecimal("0.00"),
+        callback = Option.empty,
         createTime = LocalDateTime.now()
       )
 

@@ -9,11 +9,24 @@ import akka.persistence.typed.scaladsl.{
   EventSourcedBehavior,
   RetentionCriteria
 }
-import com.dounine.ecdouyin.model.models.BaseSerializer
+import com.dounine.ecdouyin.model.models.{BaseSerializer, OrderModel}
 import com.dounine.ecdouyin.tools.json.JsonParse
 import org.slf4j.LoggerFactory
 import OrderBase._
+import akka.http.scaladsl.Http
+import akka.http.scaladsl.model.{
+  HttpEntity,
+  HttpMethods,
+  HttpRequest,
+  MediaTypes
+}
+import akka.stream.scaladsl.Source
+import akka.util.ByteString
+import com.dounine.ecdouyin.service.OrderService
+import com.dounine.ecdouyin.tools.util.{MD5Util, ServiceSingleton}
+
 import scala.concurrent.duration._
+import scala.util.{Failure, Success}
 
 object OrderBehavior extends JsonParse {
   private val logger = LoggerFactory.getLogger(OrderBehavior.getClass)
@@ -30,11 +43,47 @@ object OrderBehavior extends JsonParse {
           status.ShutdowningStatus(context, timers)
         )
 
+        val orderService = ServiceSingleton.get(classOf[OrderService])
         val commandDefaultHandler: (
             State,
             BaseSerializer
         ) => Effect[BaseSerializer, State] = (state, command) =>
           command match {
+            case CallbackFail(request, msg) => {
+              logger.error(command.logJson)
+              Effect.none
+            }
+            case CallbackOk(request) => {
+              logger.info(command.logJson)
+              Effect.none
+            }
+            case e @ Callback(
+                  order,
+                  status,
+                  callback,
+                  apiSecret,
+                  msg
+                ) => {
+              Effect.none.thenRun((latest: State) => {
+                context.pipeToSelf {
+                  orderService.callback(
+                    order = order,
+                    status = status,
+                    callback = callback,
+                    apiSecret = apiSecret,
+                    msg = msg
+                  )
+                } {
+                  case Failure(exception) =>
+                    CallbackFail(request = e, msg = exception.getMessage)
+                  case Success(value) => CallbackOk(e)
+                }
+              })
+            }
+            case IgnoreEvent(_, _) => {
+              logger.info(command.logJson)
+              Effect.none
+            }
             case Shutdown() => {
               logger.info(command.logJson)
               Effect.none.thenStop()

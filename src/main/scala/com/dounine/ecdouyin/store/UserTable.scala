@@ -16,12 +16,16 @@ class UserTable(tag: Tag)
       apiSecret,
       balance,
       margin,
+      callback,
       createTime
     ).mapTo[UserModel.DbInfo]
 
   def apiKey: Rep[String] = column[String]("apiKey", O.PrimaryKey, O.Length(32))
 
   def apiSecret: Rep[String] = column[String]("apiSecret", O.Length(32))
+
+  def callback: Rep[Option[String]] =
+    column[Option[String]]("callback", O.Length(100))
 
   def balance: Rep[BigDecimal] = column[BigDecimal]("balance", O.Length(11))
 

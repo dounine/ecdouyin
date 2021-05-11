@@ -4,6 +4,7 @@ import akka.Done
 import akka.actor.typed.ActorRef
 import akka.cluster.sharding.typed.scaladsl.EntityTypeKey
 import com.dounine.ecdouyin.model.models.{BaseSerializer, OrderModel}
+import com.dounine.ecdouyin.model.types.service.PayStatus.PayStatus
 
 import java.time.LocalDateTime
 
@@ -33,8 +34,10 @@ object OrderBase {
 
   trait Command extends BaseSerializer
 
-  final case class UpdateOk(before: OrderModel.DbInfo, after: OrderModel.DbInfo)
-      extends Command
+  final case class UpdateOk(
+      before: OrderModel.DbInfo,
+      after: OrderModel.DbInfo
+  ) extends Command
 
   final case class UpdateFail(
       before: OrderModel.DbInfo,
@@ -100,6 +103,21 @@ object OrderBase {
       order: OrderModel.DbInfo,
       msg: String
   ) extends Command
+
+  final case class Callback(
+      order: OrderModel.DbInfo,
+      status: PayStatus,
+      callback: Option[String],
+      apiSecret: String,
+      msg: Option[String]
+  ) extends Command
+
+  final case class CallbackOk(request: Callback) extends Command
+
+  final case class CallbackFail(request: Callback, msg: String) extends Command
+
+  final case class IgnoreEvent(request: Command, msg: Option[String] = None)
+      extends Command
 
   final val intervalName = "intervalOrder"
 

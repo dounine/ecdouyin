@@ -4,6 +4,7 @@ val json4sVersion = "3.7.0-M6"
 val alpakka = "2.0.2"
 val elastic4sVersion = "7.12.0"
 
+
 lazy val app = (project in file("."))
   .enablePlugins(DockerPlugin, JavaServerAppPackaging)
   .settings(
@@ -21,7 +22,9 @@ lazy val app = (project in file("."))
       "com.sksamuel.elastic4s" %% "elastic4s-client-esjava" % elastic4sVersion,
       "ch.qos.logback" % "logback-classic" % "1.2.3",
       "com.github.pureconfig" %% "pureconfig" % "0.12.3",
-      "eu.timepit" %% "refined" % "0.9.20",
+      "eu.timepit" %% "refined" % "0.9.24",
+      "eu.timepit" %% "refined-cats" % "0.9.24",
+      "eu.timepit" %% "refined-eval" % "0.9.24",
       "com.lightbend.akka" %% "akka-stream-alpakka-file" % alpakka,
       "com.lightbend.akka" %% "akka-stream-alpakka-slick" % alpakka,
       "com.lightbend.akka" %% "akka-stream-alpakka-udp" % alpakka,
@@ -57,6 +60,9 @@ lazy val app = (project in file("."))
       "io.altoo" %% "akka-kryo-serialization" % "2.0.1",
       "de.heikoseeberger" %% "akka-http-circe" % "1.35.3",
       "de.heikoseeberger" %% "akka-http-json4s" % "1.35.3",
+      "org.typelevel" %% "cats-core" % "2.6.0",
+      "io.circe" %% "circe-refined" % "0.14.0-M6",
+      "io.circe" %% "circe-generic" % "0.14.0-M6",
       "com.esotericsoftware" % "kryo" % "5.0.3",
       "mysql" % "mysql-connector-java" % "8.0.22",
       "commons-codec" % "commons-codec" % "1.15",
@@ -66,6 +72,7 @@ lazy val app = (project in file("."))
       "com.typesafe.slick" %% "slick-codegen" % "3.3.3",
       "io.spray" %% "spray-json" % "1.3.6",
       "com.pauldijou" %% "jwt-core" % "4.3.0",
+      "com.holidaycheck" %% "easy-akka-marshalling" % "1.0.0",
       "com.typesafe.akka" %% "akka-http-testkit" % akkaHttpVersion % Test,
       "com.typesafe.akka" %% "akka-stream-testkit" % akkaVersion % Test,
       "com.typesafe.akka" %% "akka-actor-testkit-typed" % akkaVersion % Test,

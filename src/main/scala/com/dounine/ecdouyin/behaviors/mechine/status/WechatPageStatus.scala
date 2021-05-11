@@ -51,7 +51,7 @@ object WechatPageStatus extends JsonParse {
           logger.info(command.logJson)
           Effect
             .persist(command)
-            .thenRun((latestState: State) => {
+            .thenRun((latest: State) => {
               sharding
                 .entityRefFor(
                   OrderBase.typeKey,
@@ -59,7 +59,7 @@ object WechatPageStatus extends JsonParse {
                 )
                 .tell(
                   OrderPayFail(
-                    order = latestState.data.order.get,
+                    order = latest.data.order.get,
                     status = MechineStatus.wechatPage
                   )
                 )
@@ -70,7 +70,7 @@ object WechatPageStatus extends JsonParse {
                 )
                 .tell(
                   Enable(
-                    latestState.data.mechineId
+                    latest.data.mechineId
                   )
                 )
             })

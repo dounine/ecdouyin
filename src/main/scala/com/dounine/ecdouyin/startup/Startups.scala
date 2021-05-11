@@ -105,6 +105,7 @@ class Startups(system: ActorSystem[_]) {
           apiSecret = "abc",
           balance = BigDecimal("10.00"),
           margin = BigDecimal("0.00"),
+          callback = Option.empty,
           createTime = LocalDateTime.now()
         )
       )

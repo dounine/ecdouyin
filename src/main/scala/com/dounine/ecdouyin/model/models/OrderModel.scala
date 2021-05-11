@@ -3,6 +3,8 @@ package com.dounine.ecdouyin.model.models
 import com.dounine.ecdouyin.model.types.service.MechinePayStatus.MechinePayStatus
 import com.dounine.ecdouyin.model.types.service.PayPlatform.PayPlatform
 import com.dounine.ecdouyin.model.types.service.PayStatus.PayStatus
+import eu.timepit.refined.api.Refined
+import eu.timepit.refined.numeric.Positive
 
 import java.time.LocalDateTime
 
@@ -45,4 +47,22 @@ object OrderModel {
       outOrder: Option[String],
       sign: String
   ) extends BaseSerializer
+
+  final case class Balance(
+      apiKey: String,
+      sign: String
+  ) extends BaseSerializer
+
+  final case class CallbackInfo(
+      apiKey: String,
+      orderId: String,
+      outOrder: String,
+      money: String,
+      account: String,
+      platform: PayPlatform,
+      status: PayStatus,
+      sign: String,
+      msg: Option[String]
+  ) extends BaseSerializer
+
 }

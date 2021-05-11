@@ -3,30 +3,20 @@ package com.dounine.ecdouyin.router.routers
 import akka.actor
 import akka.actor.typed.ActorSystem
 import akka.cluster.sharding.typed.scaladsl.ClusterSharding
-import akka.http.scaladsl.model.{
-  ContentType,
-  HttpEntity,
-  HttpResponse,
-  MediaTypes
-}
 import akka.http.scaladsl.server.Directives.{concat, _}
 import akka.http.scaladsl.server.Route
-import akka.http.scaladsl.server.directives.FileInfo
 import akka.stream._
 import com.dounine.ecdouyin.behaviors.order.OrderBase
-import com.dounine.ecdouyin.model.models.{OrderModel, RouterModel}
-import com.dounine.ecdouyin.model.types.router.ResponseCode
+import com.dounine.ecdouyin.model.models.OrderModel
 import com.dounine.ecdouyin.model.types.service.{MechinePayStatus, PayStatus}
 import com.dounine.ecdouyin.service.{OrderService, UserService}
 import com.dounine.ecdouyin.tools.util.{MD5Util, ServiceSingleton}
 import org.slf4j.{Logger, LoggerFactory}
 
-import java.io.File
-import java.nio.file.{Files, Paths}
-import java.time.{LocalDate, LocalDateTime}
+import java.time.LocalDateTime
+import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContextExecutor, Future}
 import scala.util.{Failure, Success}
-import scala.concurrent.duration._
 class OrderRouter(system: ActorSystem[_]) extends SuportRouter {
 
   private final val logger: Logger =
@@ -42,38 +32,74 @@ class OrderRouter(system: ActorSystem[_]) extends SuportRouter {
   val orderService = ServiceSingleton.get(classOf[OrderService])
   val userService = ServiceSingleton.get(classOf[UserService])
 
+  val signInvalidMsg = "特征码验证失败"
+  val apiKeyNotFound = "钥匙不存在"
+  val orderNotFound = "定单不存在"
+  val balanceNotEnough = "帐户可用余额不足"
+  val orderAndOutOrderRequireOn = "[orderId/outOrder]不能全为空"
+
   val route: Route =
     concat(
       get {
-        path("order" / "info") {
+        path("balance") {
+          parameterMap {
+            querys =>
+              {
+                logger.info(querys.logJson)
+                val queryInfo = querys.toJson.jsonTo[OrderModel.Balance]
+                val result = userService
+                  .info(queryInfo.apiKey)
+                  .map {
+                    case Some(value) => {
+                      require(
+                        MD5Util.md5(
+                          value.apiSecret
+                        ) == queryInfo.sign,
+                        signInvalidMsg
+                      )
+                      ok(
+                        Map(
+                          "balance" -> value.balance,
+                          "margin" -> value.margin
+                        )
+                      )
+                    }
+                    case None => throw new Exception(apiKeyNotFound)
+                  }
+                onComplete(result) {
+                  case Failure(exception) => fail(exception.getMessage)
+                  case Success(value)     => value
+                }
+              }
+          }
+        } ~ path("order" / "info") {
           parameterMap {
             querys =>
               {
                 logger.info(querys.logJson)
                 val queryInfo = querys.toJson.jsonTo[OrderModel.Query]
+                require(
+                  queryInfo.orderId.isDefined || queryInfo.outOrder.isDefined,
+                  orderAndOutOrderRequireOn
+                )
                 val result = userService
                   .info(queryInfo.apiKey)
-                  .map {
-                    case Some(value) => {
-                      MD5Util.md5(
-                        value.apiSecret + queryInfo.orderId
-                          .getOrElse(queryInfo.outOrder.get)
-                      ) == queryInfo.sign
-                    }
-                    case None => false
-                  }
                   .flatMap {
-                    case true =>
+                    case Some(value) => {
+                      require(
+                        MD5Util.md5(
+                          value.apiSecret + queryInfo.orderId
+                            .getOrElse(queryInfo.outOrder.get)
+                        ) == queryInfo.sign,
+                        signInvalidMsg
+                      )
                       if (queryInfo.orderId.isDefined) {
                         orderService.infoOrder(queryInfo.orderId.get.toLong)
-                      } else if (queryInfo.outOrder.isDefined) {
-                        orderService.infoOutOrder(queryInfo.outOrder.get)
                       } else {
-                        Future.failed(
-                          new Exception("orderId or outOrder required one")
-                        )
+                        orderService.infoOutOrder(queryInfo.outOrder.get)
                       }
-                    case false => Future.failed(new Exception("sign invalid"))
+                    }
+                    case None => throw new Exception(signInvalidMsg)
                   }
                 onComplete(result) {
                   case Failure(exception) => fail(exception.getMessage)
@@ -92,7 +118,7 @@ class OrderRouter(system: ActorSystem[_]) extends SuportRouter {
                             "createTime" -> order.createTime
                           )
                         )
-                      case None => fail("order not found")
+                      case None => fail(orderNotFound)
                     }
                   }
                 }
@@ -110,12 +136,18 @@ class OrderRouter(system: ActorSystem[_]) extends SuportRouter {
                   .info(order.apiKey)
                   .flatMap {
                     case Some(userInfo) =>
-                      if (
+                      require(
                         MD5Util.md5(
                           userInfo.apiSecret + order.account + order.money + order.platform + order.outOrder
-                        ) != order.sign
+                        ) == order.sign,
+                        signInvalidMsg
+                      )
+                      if (
+                        !order.money.matches(
+                          "\\d+"
+                        ) || (order.money.toInt >= 6 && order.money.toInt <= 5000)
                       ) {
-                        Future.failed(new Exception("sign invalid"))
+                        throw new Exception("充值金额只能是[6 ~ 5000]之间的整数")
                       } else if (
                         userInfo.balance - BigDecimal(order.money) < 0
                       ) {
@@ -123,7 +155,7 @@ class OrderRouter(system: ActorSystem[_]) extends SuportRouter {
                           complete(
                             Map(
                               "code" -> "fail",
-                              "msg" -> "balance not enough",
+                              "msg" -> balanceNotEnough,
                               "data" -> Map(
                                 "balance" -> userInfo.balance,
                                 "margin" -> userInfo.margin
@@ -173,7 +205,7 @@ class OrderRouter(system: ActorSystem[_]) extends SuportRouter {
                               throw new Exception(msg)
                           }
                       }
-                    case None => Future.failed(new Exception("api not found"))
+                    case None => throw new Exception(apiKeyNotFound)
                   }
                 onComplete(result) {
                   case Failure(exception) => fail(exception.getMessage)
@@ -188,29 +220,31 @@ class OrderRouter(system: ActorSystem[_]) extends SuportRouter {
           entity(as[OrderModel.Cancel]) {
             order =>
               {
-                if (order.orderId.isEmpty && order.outOrder.isEmpty) {
-                  throw new Exception("orderId or outOrder required one")
-                }
                 logger.info(order.logJson)
+                require(
+                  order.orderId.isDefined || order.outOrder.isDefined,
+                  orderAndOutOrderRequireOn
+                )
                 val result = userService
                   .info(order.apiKey)
-                  .map {
+                  .flatMap {
                     case Some(value) =>
-                      MD5Util.md5(
-                        value.apiSecret + order.orderId
-                          .getOrElse(order.outOrder.get)
-                      ) == order.sign
-                    case None => throw new Exception("sign invalid")
-                  }
-                  .flatMap { _ =>
-                    if (order.orderId.isDefined)
-                      Future.successful(order.orderId.get.toLong)
-                    else {
-                      orderService.infoOutOrder(order.outOrder.get).map {
-                        case Some(order) => order.orderId
-                        case None        => throw new Exception("order not exit")
+                      require(
+                        MD5Util.md5(
+                          value.apiSecret + order.orderId
+                            .getOrElse(order.outOrder.get)
+                        ) == order.sign,
+                        signInvalidMsg
+                      )
+                      if (order.orderId.isDefined)
+                        Future.successful(order.orderId.get.toLong)
+                      else {
+                        orderService.infoOutOrder(order.outOrder.get).map {
+                          case Some(order) => order.orderId
+                          case None        => throw new Exception(orderNotFound)
+                        }
                       }
-                    }
+                    case None => throw new Exception(signInvalidMsg)
                   }
                   .flatMap { orderId =>
                     sharding
@@ -235,7 +269,7 @@ class OrderRouter(system: ActorSystem[_]) extends SuportRouter {
                     if (value == 1) {
                       ok
                     } else {
-                      fail("order not found")
+                      fail(orderNotFound)
                     }
                   }
                 }

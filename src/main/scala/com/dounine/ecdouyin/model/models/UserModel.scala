@@ -8,16 +8,18 @@ import java.time.LocalDateTime
 
 object UserModel {
 
-  case class DbInfo(
+  final case class DbInfo(
       apiKey: String,
       apiSecret: String,
       balance: BigDecimal,
       margin: BigDecimal,
+      callback: Option[String],
       createTime: LocalDateTime
   ) extends BaseSerializer
 
-  case class UpdateDbInfo(
+  final case class UpdateDbInfo(
       apiKey: Rep[String],
       balance: Rep[BigDecimal]
   ) extends BaseSerializer
+
 }

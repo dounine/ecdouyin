@@ -4,16 +4,13 @@ import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import akka.actor.typed.{Behavior, PreRestart, SupervisorStrategy}
 import akka.cluster.sharding.typed.scaladsl.ClusterSharding
 import akka.persistence.typed._
-import akka.persistence.typed.scaladsl.{
-  Effect,
-  EventSourcedBehavior,
-  RetentionCriteria
-}
+import akka.persistence.typed.scaladsl.{Effect, EventSourcedBehavior, RetentionCriteria}
 import com.dounine.ecdouyin.behaviors.client.SocketBehavior
 import com.dounine.ecdouyin.behaviors.mechine.MechineBase._
 import com.dounine.ecdouyin.behaviors.mechine.status.ConnectedStatus.logger
 import com.dounine.ecdouyin.behaviors.mechine.status.PaySuccessStatus.logger
 import com.dounine.ecdouyin.behaviors.order.OrderBase
+import com.dounine.ecdouyin.behaviors.qrcode.QrcodeBehavior
 import com.dounine.ecdouyin.model.models.BaseSerializer
 import com.dounine.ecdouyin.model.types.service.MechineStatus.MechineStatus
 import com.dounine.ecdouyin.tools.json.JsonParse
@@ -54,37 +51,84 @@ object MechineBehavior extends JsonParse {
             BaseSerializer
         ) => Effect[BaseSerializer, State] = (state, command) =>
           command match {
-            case e @ CreateOrder(order) => {
+            case QrcodeQuery(order) => {
               logger.info(command.logJson)
-              Effect
-                .persist(command)
-                .thenRun((latestState: State) => {
-                  e.replyTo.tell(
-                    CreateOrderOk(e)
+              Effect.none.thenRun((latest: State) => {
+                sharding
+                  .entityRefFor(
+                    QrcodeBehavior.typeKey,
+                    order.orderId.toString
                   )
-                  e.replyTo.tell(
-                    Disable(latestState.data.mechineId)
+                  .tell(
+                    QrcodeBehavior.Create(order)(context.self)
                   )
-                  timers.startSingleTimer(
-                    timeoutName,
-                    SocketTimeout(Option.empty),
-                    state.data.orderTimeout
+              })
+            }
+            case QrcodeBehavior.CreateOk(request, qrcode) => {
+              logger.info(command.logJson)
+              val order = request.order
+              Effect.none.thenRun((latest: State) => {
+                timers.startSingleTimer(
+                  timeoutName,
+                  SocketTimeout(Option.empty),
+                  state.data.orderTimeout
+                )
+                sharding
+                  .entityRefFor(
+                    OrderBase.typeKey,
+                    OrderBase.typeKey.name
                   )
-                  latestState.data.actor.foreach(
-                    _.tell(
-                      SocketBehavior.OrderCreate(
-                        image =
-                          "/tmp/ec/2021-05-08/screen_7765738843915052813_04E663DA37D1F6F581567CA36EA607FC.jpg",
-                        domain = domain,
-                        orderId = order.orderId,
-                        money = order.money,
-                        volume = order.volumn,
-                        platform = order.platform,
-                        timeout = state.data.orderTimeout
-                      )
+                  .tell(
+                    CreateOrderOk(CreateOrder(request.order)(null))
+                  )
+                latest.data.actor.foreach(
+                  _.tell(
+                    SocketBehavior.OrderCreate(
+                      image = qrcode,
+                      domain = domain,
+                      orderId = order.orderId,
+                      money = order.money,
+                      volume = order.volumn,
+                      platform = order.platform,
+                      timeout = state.data.orderTimeout
                     )
                   )
-                })
+                )
+              })
+            }
+            case QrcodeBehavior.CreateFail(request, msg) => {
+              logger.error(command.logJson)
+              Effect.none.thenRun((latest: State) => {
+                sharding
+                  .entityRefFor(
+                    OrderBase.typeKey,
+                    OrderBase.typeKey.name
+                  )
+                  .tell(
+                    CreateOrderFail(CreateOrder(request.order)(null), msg)
+                  )
+              })
+            }
+            case e @ CreateOrder(order) => {
+              logger.info(command.logJson)
+              state.data.order match {
+                case Some(order) =>
+                  Effect.none.thenRun((latest: State) => {
+                    e.replyTo.tell(CreateOrderFail(e, "order exit"))
+                  })
+                case None => {
+                  Effect
+                    .persist(command)
+                    .thenRun((latest: State) => {
+                      context.self.tell(
+                        QrcodeQuery(order)
+                      )
+                      e.replyTo.tell(
+                        Disable(latest.data.mechineId)
+                      )
+                    })
+                }
+              }
             }
             case SocketConnect(actor) => {
               logger.info(command.logJson)
@@ -142,14 +186,14 @@ object MechineBehavior extends JsonParse {
               logger.info(command.logJson)
               Effect
                 .persist(command)
-                .thenRun((latestState: State) => {
+                .thenRun((latest: State) => {
                   sharding
                     .entityRefFor(
                       OrderBase.typeKey,
                       OrderBase.typeKey.name
                     )
                     .tell(
-                      OrderPaySuccess(latestState.data.order.get)
+                      OrderPaySuccess(latest.data.order.get)
                     )
                   sharding
                     .entityRefFor(
@@ -158,7 +202,7 @@ object MechineBehavior extends JsonParse {
                     )
                     .tell(
                       Enable(
-                        latestState.data.mechineId
+                        latest.data.mechineId
                       )
                     )
                 })
@@ -169,7 +213,7 @@ object MechineBehavior extends JsonParse {
               timers.cancel(timeoutName)
               Effect
                 .persist(command)
-                .thenRun((latestState: State) => {
+                .thenRun((latest: State) => {
                   sharding
                     .entityRefFor(
                       OrderBase.typeKey,
@@ -177,7 +221,7 @@ object MechineBehavior extends JsonParse {
                     )
                     .tell(
                       OrderPayFail(
-                        latestState.data.order.get,
+                        latest.data.order.get,
                         getStatus(state)
                       )
                     )
@@ -188,7 +232,7 @@ object MechineBehavior extends JsonParse {
                     )
                     .tell(
                       Enable(
-                        latestState.data.mechineId
+                        latest.data.mechineId
                       )
                     )
 

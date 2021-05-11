@@ -60,6 +60,25 @@ object BusyStatus extends JsonParse {
                 status = PayStatus.payed
               )
               context.pipeToSelf(
+                userService.info(order.apiKey)
+              ) {
+                case Failure(exception) =>
+                  IgnoreEvent(e, Option(exception.getMessage))
+                case Success(value) => {
+                  value match {
+                    case Some(info) =>
+                      Callback(
+                        updateOrder,
+                        PayStatus.payed,
+                        info.callback,
+                        info.apiSecret,
+                        None
+                      )
+                    case None => IgnoreEvent(e, Option("apiKey not found"))
+                  }
+                }
+              }
+              context.pipeToSelf(
                 orderService
                   .update(
                     updateOrder
@@ -82,7 +101,7 @@ object BusyStatus extends JsonParse {
               }
             })
         }
-        case WebPayFail(order, msg) => {
+        case e@WebPayFail(order, msg) => {
           logger.error(command.logJson)
           val updateOrder = order.copy(
             payCount = order.payCount + 1,
@@ -96,6 +115,27 @@ object BusyStatus extends JsonParse {
           Effect
             .persist(WebPayFail(updateOrder, msg))
             .thenRun((latestState: State) => {
+              if(updateOrder.status == PayStatus.payerr){
+                context.pipeToSelf(
+                  userService.info(order.apiKey)
+                ) {
+                  case Failure(exception) =>
+                    IgnoreEvent(e, Option(exception.getMessage))
+                  case Success(value) => {
+                    value match {
+                      case Some(info) =>
+                        Callback(
+                          updateOrder,
+                          updateOrder.status,
+                          info.callback,
+                          info.apiSecret,
+                          None
+                        )
+                      case None => IgnoreEvent(e, Option("apiKey not found"))
+                    }
+                  }
+                }
+              }
               context.pipeToSelf(
                 orderService
                   .update(
@@ -155,7 +195,7 @@ object BusyStatus extends JsonParse {
             request.replyTo.tell(CreateFail(msg))
           })
         }
-        case UpdateOk(_, _) => {
+        case UpdateOk(order, _) => {
           logger.info(command.logJson)
           Effect.none
         }

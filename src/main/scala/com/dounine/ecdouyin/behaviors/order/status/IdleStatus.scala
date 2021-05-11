@@ -59,6 +59,44 @@ object IdleStatus extends JsonParse {
                 status = PayStatus.payed
               )
               context.pipeToSelf(
+                userService.info(order.apiKey)
+              ) {
+                case Failure(exception) =>
+                  CallbackFail(
+                    Callback(
+                      order,
+                      updateOrder.status,
+                      None,
+                      "",
+                      None
+                    ),
+                    exception.getMessage
+                  )
+                case Success(value) => {
+                  value match {
+                    case Some(info) =>
+                      Callback(
+                        order,
+                        PayStatus.payed,
+                        info.callback,
+                        info.apiSecret,
+                        None
+                      )
+                    case None =>
+                      CallbackFail(
+                        Callback(
+                          order,
+                          PayStatus.payed,
+                          None,
+                          "",
+                          None
+                        ),
+                        "apiKey not found"
+                      )
+                  }
+                }
+              }
+              context.pipeToSelf(
                 orderService
                   .update(
                     updateOrder
