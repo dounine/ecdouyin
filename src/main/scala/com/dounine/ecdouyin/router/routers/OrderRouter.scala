@@ -10,7 +10,8 @@ import akka.stream.scaladsl.Source
 import com.dounine.ecdouyin.behaviors.order.OrderBase
 import com.dounine.ecdouyin.behaviors.qrcode.QrcodeBehavior
 import com.dounine.ecdouyin.model.models.OrderModel
-import com.dounine.ecdouyin.model.types.service.{MechinePayStatus, PayStatus}
+import com.dounine.ecdouyin.model.types.service.PayPlatform.PayPlatform
+import com.dounine.ecdouyin.model.types.service.{MechinePayStatus, PayPlatform, PayStatus}
 import com.dounine.ecdouyin.service.{OrderService, UserService}
 import com.dounine.ecdouyin.tools.util.{MD5Util, ServiceSingleton}
 import org.slf4j.{Logger, LoggerFactory}
@@ -43,26 +44,42 @@ class OrderRouter(system: ActorSystem[_]) extends SuportRouter {
   val route: Route =
     concat(
       get {
-        path("order" / "qrcode") {
-          val sharding = ClusterSharding(system)
-          onComplete(
-            orderService
-              .infoOrder(1)
-              .flatMap(result => {
-                sharding
-                  .entityRefFor(
-                    QrcodeBehavior.typeKey,
-                    "1"
-                  )
-                  .ask(
-                    QrcodeBehavior.Create(result.get)
-                  )(20.seconds)
-              })
-          ) {
-            case Failure(exception) => throw exception
-            case Success(value)     => ok(value)
+        path("user" / "info") {
+          parameters("platform".as[String], "userId".as[String]) {
+            (platform, userId) =>
+              {
+                onComplete(orderService.userInfo(PayPlatform.withName(platform), userId)) {
+                  case Failure(exception) => fail(exception.getMessage)
+                  case Success(value) =>
+                    value match {
+                      case Some(info) => ok(info)
+                      case None       => fail("user not found")
+                    }
+                }
+              }
+
           }
         } ~
+          path("order" / "qrcode") {
+            val sharding = ClusterSharding(system)
+            onComplete(
+              orderService
+                .infoOrder(1)
+                .flatMap(result => {
+                  sharding
+                    .entityRefFor(
+                      QrcodeBehavior.typeKey,
+                      "1"
+                    )
+                    .ask(
+                      QrcodeBehavior.Create(result.get)
+                    )(20.seconds)
+                })
+            ) {
+              case Failure(exception) => throw exception
+              case Success(value)     => ok(value)
+            }
+          } ~
           path("balance") {
             parameterMap {
               querys =>

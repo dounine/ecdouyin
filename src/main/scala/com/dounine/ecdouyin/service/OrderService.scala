@@ -14,12 +14,14 @@ import akka.stream.scaladsl.{RestartSource, Sink, Source}
 import akka.util.ByteString
 import com.dounine.ecdouyin.model.models.{OrderModel, UserModel}
 import com.dounine.ecdouyin.model.types.service.MechinePayStatus.MechinePayStatus
+import com.dounine.ecdouyin.model.types.service.PayPlatform.PayPlatform
 import com.dounine.ecdouyin.model.types.service.PayStatus
 import com.dounine.ecdouyin.model.types.service.PayStatus.PayStatus
 import com.dounine.ecdouyin.store.{EnumMappers, OrderTable, UserTable}
 import com.dounine.ecdouyin.tools.akka.ConnectSettings
 import com.dounine.ecdouyin.tools.akka.db.DataSource
 import com.dounine.ecdouyin.tools.util.MD5Util
+import org.slf4j.LoggerFactory
 import slick.jdbc.MySQLProfile.api._
 import slick.lifted.TableQuery
 
@@ -32,6 +34,8 @@ class OrderService(system: ActorSystem[_]) extends EnumMappers {
 
   implicit val ec = system.executionContext
   implicit val materializer = SystemMaterializer(system).materializer
+  private val logger = LoggerFactory.getLogger(classOf[OrderService])
+  private val http = Http(system)
 
   def infoOrder(orderId: Long): Future[Option[OrderModel.DbInfo]] =
     db.run(dict.filter(_.orderId === orderId).result.headOption)
@@ -76,6 +80,48 @@ class OrderService(system: ActorSystem[_]) extends EnumMappers {
       dict.insertOrUpdate(info)
     )
 
+
+  def userInfo(
+      platform: PayPlatform,
+      userId: String
+  ): Future[Option[OrderModel.UserInfo]] = {
+    http
+      .singleRequest(
+        request = HttpRequest(
+          uri =
+            s"https://webcast.amemv.com/webcast/user/open_info/?search_ids=${userId}&aid=1128&source=1a0deeb4c56147d0f844d473b325a28b&fp=verify_khq5h2bx_oY8iEaW1_b0Yt_4Hvt_9PRa_3U70XFUYPgzI&t=${System
+              .currentTimeMillis()}",
+          method = HttpMethods.GET
+        ),
+        settings = ConnectSettings.httpSettings(system)
+      )
+      .flatMap {
+        case HttpResponse(_, _, entity, _) =>
+          entity.dataBytes
+            .runFold(ByteString.empty)(_ ++ _)
+            .map(_.utf8String)
+            .map(_.jsonTo[OrderModel.DouYinSearchResponse])
+            .map(item => {
+              if (item.data.open_info.nonEmpty) {
+                val data: OrderModel.DouYinSearchOpenInfo =
+                  item.data.open_info.head
+                Option(
+                  OrderModel.UserInfo(
+                    nickName = data.nick_name,
+                    id = data.search_id,
+                    avatar = data.avatar_thumb.url_list.head
+                  )
+                )
+              } else {
+                Option.empty
+              }
+            })
+        case msg @ _ =>
+          logger.error(s"请求失败 $msg")
+          Future.failed(new Exception(s"请求失败 $msg"))
+      }
+  }
+
   def updateMechineStatus(
       orderId: Long,
       mechineStatus: MechinePayStatus
@@ -87,7 +133,6 @@ class OrderService(system: ActorSystem[_]) extends EnumMappers {
         .update(mechineStatus)
     )
 
-  val http = Http(system)
   def callback(
       order: OrderModel.DbInfo,
       status: PayStatus,

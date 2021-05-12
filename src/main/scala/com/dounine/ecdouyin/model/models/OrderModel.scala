@@ -65,4 +65,36 @@ object OrderModel {
       msg: Option[String]
   ) extends BaseSerializer
 
+  final case class UserInfo(
+      nickName: String,
+      id: String,
+      avatar: String
+  ) extends BaseSerializer
+
+  final case class DouYinSearchAvatarThumb(
+      avg_color: String,
+      height: Long,
+      image_type: Int,
+      is_animated: Boolean,
+      open_web_url: String,
+      uri: String,
+      url_list: Seq[String],
+      width: Long
+  )
+
+  final case class DouYinSearchOpenInfo(
+      avatar_thumb: DouYinSearchAvatarThumb,
+      nick_name: String,
+      search_id: String
+  )
+
+  final case class DouYinSearchData(
+      open_info: Seq[DouYinSearchOpenInfo]
+  )
+
+  final case class DouYinSearchResponse(
+      status_code: Int,
+      data: DouYinSearchData
+  )
+
 }
