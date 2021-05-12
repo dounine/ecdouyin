@@ -59,7 +59,10 @@ object BindRouters extends SuportRouter {
     .getDuration("akka.http.server.request-timeout")
     .toMillis
 
-  def apply(system: ActorSystem[_]): RequestContext => Future[RouteResult] = {
+  def apply(
+      system: ActorSystem[_],
+      routers: Array[Route]
+  ): RequestContext => Future[RouteResult] = {
     Route.seal(
       /**
         * all request default timeout
@@ -70,10 +73,7 @@ object BindRouters extends SuportRouter {
         (_: HttpRequest) => timeoutResponse
       )(
         concat(
-          new HealthRouter(system).route,
-          new WebsocketRouter(system).route,
-          new FileRouter(system).route,
-          new OrderRouter(system).route
+          routers: _*
         )
       )
     )

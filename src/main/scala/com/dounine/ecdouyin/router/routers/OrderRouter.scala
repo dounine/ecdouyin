@@ -7,11 +7,16 @@ import akka.http.scaladsl.server.Directives.{concat, _}
 import akka.http.scaladsl.server.Route
 import akka.stream._
 import akka.stream.scaladsl.Source
+import com.dounine.ecdouyin.behaviors.cache.ReplicatedCacheBehavior
 import com.dounine.ecdouyin.behaviors.order.OrderBase
 import com.dounine.ecdouyin.behaviors.qrcode.QrcodeBehavior
 import com.dounine.ecdouyin.model.models.OrderModel
 import com.dounine.ecdouyin.model.types.service.PayPlatform.PayPlatform
-import com.dounine.ecdouyin.model.types.service.{MechinePayStatus, PayPlatform, PayStatus}
+import com.dounine.ecdouyin.model.types.service.{
+  MechinePayStatus,
+  PayPlatform,
+  PayStatus
+}
 import com.dounine.ecdouyin.service.{OrderService, UserService}
 import com.dounine.ecdouyin.tools.util.{MD5Util, ServiceSingleton}
 import org.slf4j.{Logger, LoggerFactory}
@@ -40,6 +45,7 @@ class OrderRouter(system: ActorSystem[_]) extends SuportRouter {
   val orderNotFound = "定单不存在"
   val balanceNotEnough = "帐户可用余额不足"
   val orderAndOutOrderRequireOn = "[orderId/outOrder]不能全为空"
+  val cacheBehavior = system.systemActorOf(ReplicatedCacheBehavior(), "cache")
 
   val route: Route =
     concat(
@@ -48,8 +54,47 @@ class OrderRouter(system: ActorSystem[_]) extends SuportRouter {
           parameters("platform".as[String], "userId".as[String]) {
             (platform, userId) =>
               {
-                onComplete(orderService.userInfo(PayPlatform.withName(platform), userId)) {
-                  case Failure(exception) => fail(exception.getMessage)
+
+                val pf = PayPlatform.withName(platform)
+                import akka.actor.typed.scaladsl.AskPattern._
+
+                val key = s"userInfo-${pf}-${userId}"
+                onComplete(
+                  cacheBehavior
+                    .ask(
+                      ReplicatedCacheBehavior.GetCache(key)
+                    )(3.seconds, system.scheduler)
+                    .flatMap {
+                      cacheValue =>
+                        {
+                          cacheValue.value match {
+                            case Some(value) =>
+                              Future.successful(
+                                value.asInstanceOf[Option[OrderModel.UserInfo]]
+                              )
+                            case None =>
+                              orderService
+                                .userInfo(pf, userId)
+                                .map(result => {
+                                  if (result.isDefined) {
+                                    cacheBehavior.tell(
+                                      ReplicatedCacheBehavior.PutCache(
+                                        key = key,
+                                        value = result,
+                                        timeout = 1.days
+                                      )
+                                    )
+                                  }
+                                  result
+                                })
+                          }
+                        }
+                    }
+                ) {
+                  case Failure(exception) => {
+                    exception.printStackTrace()
+                    fail(exception.getMessage)
+                  }
                   case Success(value) =>
                     value match {
                       case Some(info) => ok(info)

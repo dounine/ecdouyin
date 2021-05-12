@@ -1,10 +1,7 @@
 package test.com.dounine.ecdouyin
 
 import akka.actor.CoordinatedShutdown
-import akka.actor.testkit.typed.scaladsl.{
-  LogCapturing,
-  ScalaTestWithActorTestKit
-}
+import akka.actor.testkit.typed.scaladsl.{LogCapturing, ScalaTestWithActorTestKit}
 import akka.cluster.sharding.typed.ShardingEnvelope
 import akka.cluster.sharding.typed.scaladsl.{ClusterSharding, Entity}
 import akka.cluster.typed.{Cluster, Join}
@@ -23,16 +20,9 @@ import com.dounine.ecdouyin.behaviors.order.{OrderBase, OrderBehavior}
 import com.dounine.ecdouyin.behaviors.qrcode.QrcodeBehavior
 import com.dounine.ecdouyin.model.models.{OrderModel, UserModel}
 import com.dounine.ecdouyin.model.types.service.PayPlatform
-import com.dounine.ecdouyin.router.routers.BindRouters
+import com.dounine.ecdouyin.router.routers.{BindRouters, FileRouter, HealthRouter, OrderRouter, WebsocketRouter}
 import com.dounine.ecdouyin.service.{OrderService, UserService}
-import com.dounine.ecdouyin.store.{
-  AkkaPersistenerJournalTable,
-  AkkaPersistenerSnapshotTable,
-  DictionaryTable,
-  EnumMappers,
-  OrderTable,
-  UserTable
-}
+import com.dounine.ecdouyin.store.{AkkaPersistenerJournalTable, AkkaPersistenerSnapshotTable, DictionaryTable, EnumMappers, OrderTable, UserTable}
 import com.dounine.ecdouyin.tools.akka.ConnectSettings
 import com.dounine.ecdouyin.tools.akka.db.DataSource
 import com.dounine.ecdouyin.tools.json.JsonParse
@@ -43,6 +33,7 @@ import org.scalatest.wordspec.AnyWordSpecLike
 import org.scalatestplus.mockito.MockitoSugar
 import slick.lifted
 import slick.jdbc.MySQLProfile.api._
+
 import java.io.File
 import java.nio.file.Paths
 import java.time.LocalDateTime
@@ -101,7 +92,7 @@ class OrderRouterTest
   override protected def beforeAll(): Unit = {
     val cluster = Cluster.get(system)
     cluster.manager.tell(Join.create(cluster.selfMember.address))
-    val routers = BindRouters(system)
+
     val config = system.settings.config.getConfig("app")
     val appName = config.getString("name")
     val managementRoutes: Route = ClusterHttpManagementRoutes(
@@ -112,6 +103,13 @@ class OrderRouterTest
 
     ServiceSingleton.put(classOf[OrderService], new OrderService(system))
     ServiceSingleton.put(classOf[UserService], new UserService(system))
+    val routers = Array(
+      new HealthRouter(system).route,
+      new WebsocketRouter(system).route,
+      new FileRouter(system).route,
+      new OrderRouter(system).route
+    )
+
     schemas.foreach(schema => {
       try {
         Await.result(
@@ -170,7 +168,7 @@ class OrderRouterTest
         interface = config.getString("server.host"),
         port = config.getInt("server.port")
       )
-      .bind(concat(routers, managementRoutes))
+      .bind(concat(BindRouters(system,routers), managementRoutes))
       .onComplete({
         case Failure(exception) => throw exception
         case Success(value) =>

@@ -22,7 +22,10 @@ import com.dounine.ecdouyin.model.models.{OrderModel, UserModel}
 import com.dounine.ecdouyin.router.routers.{
   BindRouters,
   CachingRouter,
-  HealthRouter
+  FileRouter,
+  HealthRouter,
+  OrderRouter,
+  WebsocketRouter
 }
 import com.dounine.ecdouyin.service.{OrderService, UserService}
 import com.dounine.ecdouyin.shutdown.Shutdowns
@@ -57,7 +60,7 @@ object EcDouyin {
     val appName = config.getString("name")
     implicit val materialize = SystemMaterializer(system).materializer
     implicit val executionContext = system.executionContext
-    val routers = BindRouters(system)
+
 
     AkkaManagement(system).start()
     ClusterBootstrap(system).start()
@@ -68,13 +71,19 @@ object EcDouyin {
     val startup = new Startups(system)
     startup.start()
     new Shutdowns(system).listener()
+    val routers = Array(
+      new HealthRouter(system).route,
+      new WebsocketRouter(system).route,
+      new FileRouter(system).route,
+      new OrderRouter(system).route
+    )
 
     Http(system)
       .newServerAt(
         interface = config.getString("server.host"),
         port = config.getInt("server.port")
       )
-      .bind(concat(routers, managementRoutes))
+      .bind(concat(BindRouters(system, routers), managementRoutes))
       .onComplete({
         case Failure(exception) => throw exception
         case Success(value) =>

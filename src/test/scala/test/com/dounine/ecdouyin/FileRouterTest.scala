@@ -1,24 +1,12 @@
 package test.com.dounine.ecdouyin
 
-import akka.actor.testkit.typed.scaladsl.{
-  LogCapturing,
-  ScalaTestWithActorTestKit
-}
+import akka.actor.testkit.typed.scaladsl.{LogCapturing, ScalaTestWithActorTestKit}
 import akka.cluster.sharding.typed.ShardingEnvelope
 import akka.cluster.sharding.typed.scaladsl.ClusterSharding
 import akka.cluster.typed.{Cluster, Join}
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.marshalling.Marshal
-import akka.http.scaladsl.model.{
-  ContentTypes,
-  HttpEntity,
-  HttpMethods,
-  HttpRequest,
-  HttpResponse,
-  MediaTypes,
-  Multipart,
-  RequestEntity
-}
+import akka.http.scaladsl.model.{ContentTypes, HttpEntity, HttpMethods, HttpRequest, HttpResponse, MediaTypes, Multipart, RequestEntity}
 import akka.http.scaladsl.server.Directives.concat
 import akka.http.scaladsl.server.Route
 import akka.management.cluster.bootstrap.ClusterBootstrap
@@ -28,7 +16,7 @@ import akka.stream.scaladsl.{FileIO, Sink, Source}
 import akka.util.ByteString
 import com.dounine.ecdouyin.EcDouyin.logger
 import com.dounine.ecdouyin.behaviors.order.OrderBase
-import com.dounine.ecdouyin.router.routers.BindRouters
+import com.dounine.ecdouyin.router.routers.{BindRouters, FileRouter, HealthRouter, OrderRouter, WebsocketRouter}
 import com.dounine.ecdouyin.service.OrderService
 import com.dounine.ecdouyin.store.EnumMappers
 import com.dounine.ecdouyin.tools.akka.ConnectSettings
@@ -72,7 +60,13 @@ class FileRouterTest
   override protected def beforeAll(): Unit = {
     val cluster = Cluster.get(system)
     cluster.manager.tell(Join.create(cluster.selfMember.address))
-    val routers = BindRouters(system)
+    val routers = Array(
+      new HealthRouter(system).route,
+      new WebsocketRouter(system).route,
+      new FileRouter(system).route,
+      new OrderRouter(system).route
+    )
+
     val config = system.settings.config.getConfig("app")
     val appName = config.getString("name")
     val managementRoutes: Route = ClusterHttpManagementRoutes(
@@ -85,7 +79,7 @@ class FileRouterTest
         interface = config.getString("server.host"),
         port = config.getInt("server.port")
       )
-      .bind(concat(routers, managementRoutes))
+      .bind(concat(BindRouters(system,routers), managementRoutes))
       .onComplete({
         case Failure(exception) => throw exception
         case Success(value) =>
