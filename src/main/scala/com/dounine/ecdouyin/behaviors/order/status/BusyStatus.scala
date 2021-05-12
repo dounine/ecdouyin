@@ -300,6 +300,10 @@ object BusyStatus extends JsonParse {
           logger.info(command.logJson)
           Effect.none
         }
+        case Recovery() => {
+          logger.info(command.logJson)
+          Effect.none
+        }
         case Interval() => {
           logger.info(command.logJson)
           Effect.none

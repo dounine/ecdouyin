@@ -335,20 +335,6 @@ object IdleStatus extends JsonParse {
                   )
               })
           } else Effect.none
-//          Effect
-//            .persist()
-//            .thenRun((latest: State) => {
-//              if (latest.data.waitOrders.nonEmpty) {
-//                val order = latest.data.waitOrders.values.toList
-//                  .minBy(_.createTime)
-//                context.self.tell(
-//                  OrderHand(
-//                    order = order,
-//                    mechineId = latest.data.mechines.head
-//                  )
-//                )
-//              }
-//            })
         }
         case e @ MechineBase.Enable(_) => {
           logger.info(command.logJson)
@@ -380,23 +366,10 @@ object IdleStatus extends JsonParse {
               }
             })
         }
-//        case OrderHand(order, mechineId) => {
-//          logger.info(command.logJson)
-//          Effect.none
-//            .thenRun((latest: State) => {
-//              sharding
-//                .entityRefFor(
-//                  MechineBase.typeKey,
-//                  mechineId
-//                )
-//                .tell(
-//                  MechineBase.CreateOrder(
-//                    order = order,
-//                    mechineId = mechineId
-//                  )(context.self)
-//                )
-//            })
-//        }
+        case Recovery() => {
+          logger.info(command.logJson)
+          Effect.none
+        }
         case MechineBase.CreateOrderOk(request) => {
           logger.info(command.logJson)
           Effect.persist(command)

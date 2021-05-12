@@ -56,6 +56,10 @@ object StopedStatus extends JsonParse {
           logger.error(command.logJson)
           Effect.none
         }
+        case Recovery() => {
+          logger.info(command.logJson)
+          Effect.none
+        }
         case MechineBase.OrderPaySuccess(order) => {
           logger.info(command.logJson)
           Effect
