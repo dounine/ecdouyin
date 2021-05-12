@@ -45,7 +45,7 @@ object DisconnectedStatus extends JsonParse {
         defaultCommand: (State, BaseSerializer) => Effect[BaseSerializer, State]
     ) =>
       command match {
-        case e @ CreateOrder(_) => {
+        case e @ CreateOrder(_, _) => {
           logger.info(command.logJson)
           Effect.none.thenRun((latest: State) => {
             e.replyTo.tell(
