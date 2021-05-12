@@ -50,20 +50,23 @@ object QrcodeIdentifyStatus extends JsonParse {
         case SocketTimeout(screen) => {
           logger.info(command.logJson)
           timers.cancel(timeoutName)
+          val order = state.data.order
           Effect
             .persist(command)
             .thenRun((latest: State) => {
-              sharding
-                .entityRefFor(
-                  OrderBase.typeKey,
-                  OrderBase.typeKey.name
-                )
-                .tell(
-                  OrderPayFail(
-                    order = latest.data.order.get,
-                    status = MechineStatus.qrcodeIdentify
+              order.foreach(o =>{
+                sharding
+                  .entityRefFor(
+                    OrderBase.typeKey,
+                    OrderBase.typeKey.name
                   )
-                )
+                  .tell(
+                    OrderPayFail(
+                      order = o,
+                      status = MechineStatus.qrcodeIdentify
+                    )
+                  )
+              })
               sharding
                 .entityRefFor(
                   OrderBase.typeKey,
