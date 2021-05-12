@@ -104,7 +104,7 @@ object QrcodeChooseStatus extends JsonParse {
                 )
             })
         }
-        case e @ CreateOrder(_) => {
+        case e @ CreateOrder(_, _) => {
           logger.info(command.logJson)
           Effect.none.thenRun((latest: State) => {
             e.replyTo.tell(
