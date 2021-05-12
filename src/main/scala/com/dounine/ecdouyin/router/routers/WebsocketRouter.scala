@@ -17,6 +17,7 @@ import org.slf4j.{Logger, LoggerFactory}
 import java.util.UUID
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContextExecutor, Future}
+import scala.util.{Failure, Success}
 
 class WebsocketRouter(system: ActorSystem[_]) extends SuportRouter {
 
@@ -32,7 +33,14 @@ class WebsocketRouter(system: ActorSystem[_]) extends SuportRouter {
   val route: Route = concat(
     get {
       path(pm = "mechine" / Segment) { mechineId =>
-        handleWebSocketMessages(createConnect(mechineId))
+        {
+          extractClientIP { ip =>
+            {
+              logger.info(s"socket connect {}", ip)
+              handleWebSocketMessages(createConnect(mechineId))
+            }
+          }
+        }
       }
     }
   )
