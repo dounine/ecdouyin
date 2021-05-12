@@ -53,19 +53,19 @@ class Startups(system: ActorSystem[_]) {
       )
     )
 
-    sharding.init(
-      Entity(
-        typeKey = QrcodeBehavior.typeKey
-      )(
-        createBehavior = entityContext =>
-          QrcodeBehavior(
-            PersistenceId.of(
-              QrcodeBehavior.typeKey.name,
-              entityContext.entityId
-            )
-          )
-      )
-    )
+//    sharding.init(
+//      Entity(
+//        typeKey = QrcodeBehavior.typeKey
+//      )(
+//        createBehavior = entityContext =>
+//          QrcodeBehavior(
+//            PersistenceId.of(
+//              QrcodeBehavior.typeKey.name,
+//              entityContext.entityId
+//            )
+//          )
+//      )
+//    )
 
     sharding.init(
       Entity(

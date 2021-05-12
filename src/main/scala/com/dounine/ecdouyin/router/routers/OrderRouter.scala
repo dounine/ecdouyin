@@ -6,10 +6,10 @@ import akka.cluster.sharding.typed.scaladsl.ClusterSharding
 import akka.http.scaladsl.server.Directives.{concat, _}
 import akka.http.scaladsl.server.Route
 import akka.stream._
-import akka.stream.scaladsl.Source
+import akka.stream.scaladsl.{Sink, Source}
 import com.dounine.ecdouyin.behaviors.cache.ReplicatedCacheBehavior
 import com.dounine.ecdouyin.behaviors.order.OrderBase
-import com.dounine.ecdouyin.behaviors.qrcode.QrcodeBehavior
+import com.dounine.ecdouyin.behaviors.qrcode.{QrcodeBehavior, QrcodeSources}
 import com.dounine.ecdouyin.model.models.OrderModel
 import com.dounine.ecdouyin.model.types.service.PayPlatform.PayPlatform
 import com.dounine.ecdouyin.model.types.service.{
@@ -111,17 +111,27 @@ class OrderRouter(system: ActorSystem[_]) extends SuportRouter {
               orderService
                 .infoOrder(1)
                 .flatMap(result => {
-                  sharding
-                    .entityRefFor(
-                      QrcodeBehavior.typeKey,
-                      "1"
+                  QrcodeSources
+                    .createQrcodeSource(
+                      system,
+                      result.get
                     )
-                    .ask(
-                      QrcodeBehavior.Create(result.get)
-                    )(20.seconds)
+                    .map {
+                      case Left(value)  => throw value
+                      case Right(value) => value.qrcode
+                    }
+                    .runWith(Sink.head)
+//                  sharding
+//                    .entityRefFor(
+//                      QrcodeBehavior.typeKey,
+//                      "1"
+//                    )
+//                    .ask(
+//                      QrcodeBehavior.Create(result.get)
+//                    )(20.seconds)
                 })
             ) {
-              case Failure(exception) => throw exception
+              case Failure(exception) => fail(exception.getMessage)
               case Success(value)     => ok(value)
             }
           } ~

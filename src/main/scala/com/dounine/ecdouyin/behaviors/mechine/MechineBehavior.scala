@@ -9,12 +9,15 @@ import akka.persistence.typed.scaladsl.{
   EventSourcedBehavior,
   RetentionCriteria
 }
+import akka.stream.{Materializer, SystemMaterializer}
+import akka.stream.scaladsl.Source
 import com.dounine.ecdouyin.behaviors.client.SocketBehavior
 import com.dounine.ecdouyin.behaviors.mechine.MechineBase._
 import com.dounine.ecdouyin.behaviors.mechine.status.ConnectedStatus.logger
 import com.dounine.ecdouyin.behaviors.mechine.status.PaySuccessStatus.logger
 import com.dounine.ecdouyin.behaviors.order.OrderBase
-import com.dounine.ecdouyin.behaviors.qrcode.QrcodeBehavior
+import com.dounine.ecdouyin.behaviors.order.OrderBase.WebPayFail
+import com.dounine.ecdouyin.behaviors.qrcode.{QrcodeBehavior, QrcodeSources}
 import com.dounine.ecdouyin.model.models.BaseSerializer
 import com.dounine.ecdouyin.model.types.service.MechineStatus.MechineStatus
 import com.dounine.ecdouyin.tools.json.JsonParse
@@ -55,69 +58,6 @@ object MechineBehavior extends JsonParse {
             BaseSerializer
         ) => Effect[BaseSerializer, State] = (state, command) =>
           command match {
-            case QrcodeQuery(order) => {
-              logger.info(command.logJson)
-              Effect.none.thenRun((latest: State) => {
-                sharding
-                  .entityRefFor(
-                    QrcodeBehavior.typeKey,
-                    order.orderId.toString
-                  )
-                  .tell(
-                    QrcodeBehavior.Create(order)(context.self)
-                  )
-              })
-            }
-            case QrcodeBehavior.CreateOk(request, qrcode) => {
-              logger.info(command.logJson)
-              val order = request.order
-              Effect.none.thenRun((latest: State) => {
-                timers.startSingleTimer(
-                  timeoutName,
-                  SocketTimeout(Option.empty),
-                  state.data.mechineTimeout
-                )
-                sharding
-                  .entityRefFor(
-                    OrderBase.typeKey,
-                    OrderBase.typeKey.name
-                  )
-                  .tell(
-                    CreateOrderOk(
-                      CreateOrder(request.order, state.data.mechineId)(null)
-                    )
-                  )
-                latest.data.actor.foreach(
-                  _.tell(
-                    SocketBehavior.OrderCreate(
-                      image = qrcode,
-                      domain = domain,
-                      orderId = order.orderId,
-                      money = order.money,
-                      volume = order.volumn,
-                      platform = order.platform,
-                      timeout = state.data.appTimeout
-                    )
-                  )
-                )
-              })
-            }
-            case QrcodeBehavior.CreateFail(request, msg) => {
-              logger.error(command.logJson)
-              Effect.none.thenRun((latest: State) => {
-                sharding
-                  .entityRefFor(
-                    OrderBase.typeKey,
-                    OrderBase.typeKey.name
-                  )
-                  .tell(
-                    CreateOrderFail(
-                      CreateOrder(request.order, state.data.mechineId)(null),
-                      msg
-                    )
-                  )
-              })
-            }
             case e @ CreateOrder(order, mechineId) => {
               logger.info(command.logJson)
               state.data.order match {
@@ -129,9 +69,88 @@ object MechineBehavior extends JsonParse {
                   Effect
                     .persist(command)
                     .thenRun((latest: State) => {
-                      context.self.tell(
-                        QrcodeQuery(order)
-                      )
+
+                      /**
+                        * 系统流、不要绑定到当前Actor上、因为还有是否付费监控、一分钟后会自动关闭
+                        */
+                      QrcodeSources
+                        .createQrcodeSource(
+                          context.system,
+                          order
+                        )
+                        .map {
+                          case left @ Left(value) => {
+                            sharding
+                              .entityRefFor(
+                                OrderBase.typeKey,
+                                OrderBase.typeKey.name
+                              )
+                              .tell(
+                                CreateOrderFail(e, value.getMessage)
+                              )
+                            left
+                          }
+                          case right @ Right(value) => {
+                            timers.startSingleTimer(
+                              timeoutName,
+                              SocketTimeout(Option.empty),
+                              state.data.mechineTimeout
+                            )
+                            sharding
+                              .entityRefFor(
+                                OrderBase.typeKey,
+                                OrderBase.typeKey.name
+                              )
+                              .tell(
+                                CreateOrderOk(
+                                  e
+                                )
+                              )
+                            latest.data.actor.foreach(
+                              _.tell(
+                                SocketBehavior.OrderCreate(
+                                  image = value.qrcode,
+                                  domain = domain,
+                                  orderId = order.orderId,
+                                  money = order.money,
+                                  volume = order.volumn,
+                                  platform = order.platform,
+                                  timeout = state.data.appTimeout
+                                )
+                              )
+                            )
+                            right
+                          }
+                        }
+                        .flatMapConcat {
+                          case Left(value) => throw value
+                          case Right(value) =>
+                            QrcodeSources
+                              .createListenPay(
+                                context.system,
+                                value.source,
+                                value.order
+                              )
+                              .map {
+                                case Left(value) => throw value
+                                case Right(value) =>
+                                  OrderBase.WebPaySuccess(value)
+                              }
+                        }
+                        .recover {
+                          case e =>
+                            OrderBase
+                              .WebPayFail(order = order, msg = e.getMessage)
+                        }
+                        .runForeach(result => {
+                          sharding
+                            .entityRefFor(
+                              OrderBase.typeKey,
+                              OrderBase.typeKey.name
+                            )
+                            .tell(result)
+                        })(Materializer(context.system))
+
                       e.replyTo.tell(
                         Disable(latest.data.mechineId)
                       )
