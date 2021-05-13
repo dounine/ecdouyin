@@ -8,6 +8,7 @@ import akka.http.scaladsl.server.Route
 import akka.stream._
 import akka.stream.scaladsl.{Sink, Source}
 import com.dounine.ecdouyin.behaviors.cache.ReplicatedCacheBehavior
+import com.dounine.ecdouyin.behaviors.engine.{CoreEngine, OrderSources}
 import com.dounine.ecdouyin.behaviors.order.OrderBase
 import com.dounine.ecdouyin.behaviors.qrcode.{QrcodeBehavior, QrcodeSources}
 import com.dounine.ecdouyin.model.models.OrderModel
@@ -118,7 +119,7 @@ class OrderRouter(system: ActorSystem[_]) extends SuportRouter {
                     )
                     .map {
                       case Left(value)  => throw value
-                      case Right(value) => value.qrcode
+                      case Right(value) => value._3
                     }
                     .runWith(Sink.head)
 //                  sharding
@@ -258,45 +259,60 @@ class OrderRouter(system: ActorSystem[_]) extends SuportRouter {
                           )
                         )
                       } else {
-                        sharding
-                          .entityRefFor(
-                            OrderBase.typeKey,
-                            OrderBase.typeKey.name
+                        val newOrder = OrderModel.DbInfo(
+                          orderId = 0,
+                          outOrder = order.outOrder,
+                          apiKey = order.apiKey,
+                          account = order.account,
+                          money = order.money.toInt,
+                          volumn = order.money.toInt * 10,
+                          margin = BigDecimal(order.money),
+                          platform = order.platform,
+                          status = PayStatus.normal,
+                          mechineStatus = MechinePayStatus.normal,
+                          payCount = 0,
+                          createTime = LocalDateTime.now()
+                        )
+
+                        orderService
+                          .addOrderAndMarginUser(
+                            newOrder
                           )
-                          .ask(
-                            OrderBase.Create(
-                              OrderModel.DbInfo(
-                                orderId = 0,
-                                outOrder = order.outOrder,
-                                apiKey = order.apiKey,
-                                account = order.account,
-                                money = order.money.toInt,
-                                volumn = order.money.toInt * 10,
-                                margin = BigDecimal(order.money),
-                                platform = order.platform,
-                                status = PayStatus.normal,
-                                mechineStatus = MechinePayStatus.normal,
-                                payCount = 0,
-                                createTime = LocalDateTime.now()
-                              )
-                            )
-                          )(3.seconds)
-                          .map {
-                            case OrderBase.CreateOk(orderId) =>
-                              ok(
-                                Map(
-                                  "orderId" -> orderId.toString,
-                                  "outOrder" -> order.outOrder,
-                                  "balance" -> (userInfo.balance - BigDecimal(
-                                    order.money
-                                  )),
-                                  "margin" -> (userInfo.margin + BigDecimal(
-                                    order.money
-                                  ))
-                                )
-                              )
-                            case OrderBase.CreateFail(msg) =>
-                              throw new Exception(msg)
+                          .flatMap {
+                            orderId =>
+                              {
+                                val order = newOrder.copy(orderId = orderId)
+                                sharding
+                                  .entityRefFor(
+                                    CoreEngine.typeKey,
+                                    CoreEngine.typeKey.name
+                                  )
+                                  .ask(
+                                    CoreEngine.CreateOrder(
+                                      order
+                                    )
+                                  )(3.seconds)
+                                  .map {
+                                    case CoreEngine.CreateOrderOk(request) =>
+                                      ok(
+                                        Map(
+                                          "orderId" -> orderId.toString,
+                                          "outOrder" -> order.outOrder,
+                                          "balance" -> (userInfo.balance - BigDecimal(
+                                            order.money
+                                          )),
+                                          "margin" -> (userInfo.margin + BigDecimal(
+                                            order.money
+                                          ))
+                                        )
+                                      )
+                                    case CoreEngine
+                                          .CreateOrderFail(request, error) =>
+                                      fail(
+                                        error
+                                      )
+                                  }
+                              }
                           }
                       }
                     case None => throw new Exception(apiKeyNotFound)

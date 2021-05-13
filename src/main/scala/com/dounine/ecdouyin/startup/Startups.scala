@@ -6,6 +6,7 @@ import akka.actor.typed.ActorSystem
 import akka.cluster.sharding.typed.ShardingEnvelope
 import akka.cluster.sharding.typed.scaladsl.{ClusterSharding, Entity}
 import akka.persistence.typed.PersistenceId
+import com.dounine.ecdouyin.behaviors.engine.{CoreEngine, OrderSources}
 import com.dounine.ecdouyin.behaviors.mechine.{MechineBase, MechineBehavior}
 import com.dounine.ecdouyin.behaviors.order.{OrderBase, OrderBehavior}
 import com.dounine.ecdouyin.behaviors.qrcode.QrcodeBehavior
@@ -41,12 +42,12 @@ class Startups(system: ActorSystem[_]) {
   def start(): Unit = {
     sharding.init(
       Entity(
-        typeKey = MechineBase.typeKey
+        typeKey = CoreEngine.typeKey
       )(
         createBehavior = entityContext =>
-          MechineBehavior(
+          CoreEngine(
             PersistenceId.of(
-              MechineBase.typeKey.name,
+              CoreEngine.typeKey.name,
               entityContext.entityId
             )
           )
@@ -67,19 +68,19 @@ class Startups(system: ActorSystem[_]) {
 //      )
 //    )
 
-    sharding.init(
-      Entity(
-        typeKey = OrderBase.typeKey
-      )(
-        createBehavior = entityContext =>
-          OrderBehavior(
-            PersistenceId.of(
-              OrderBase.typeKey.name,
-              entityContext.entityId
-            )
-          )
-      )
-    )
+//    sharding.init(
+//      Entity(
+//        typeKey = OrderBase.typeKey
+//      )(
+//        createBehavior = entityContext =>
+//          OrderBehavior(
+//            PersistenceId.of(
+//              OrderBase.typeKey.name,
+//              entityContext.entityId
+//            )
+//          )
+//      )
+//    )
 
     ServiceSingleton.put(classOf[OrderService], new OrderService(system))
     ServiceSingleton.put(classOf[UserService], new UserService(system))
@@ -87,8 +88,8 @@ class Startups(system: ActorSystem[_]) {
       classOf[DictionaryService],
       new DictionaryService(system)
     )
-    ChromePools(system).pools
-      .returnObject(ChromePools(system).pools.borrowObject())
+//    ChromePools(system).pools
+//      .returnObject(ChromePools(system).pools.borrowObject())
 
     import slick.jdbc.MySQLProfile.api._
     val db = DataSource(system).source().db
@@ -134,12 +135,14 @@ class Startups(system: ActorSystem[_]) {
   def httpAfter(): Unit = {
     sharding
       .entityRefFor(
-        OrderBase.typeKey,
-        OrderBase.typeKey.name
+        CoreEngine.typeKey,
+        CoreEngine.typeKey.name
       )
-      .tell(
-        OrderBase.Run()
-      )
+      .ask(
+        CoreEngine.Message(
+          OrderSources.QueryOrder(0)
+        )
+      )(3.seconds)
   }
 
 }

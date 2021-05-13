@@ -3,13 +3,14 @@ package com.dounine.ecdouyin.behaviors.mechine
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import akka.actor.typed.{Behavior, PreRestart, SupervisorStrategy}
 import akka.cluster.sharding.typed.scaladsl.ClusterSharding
+import akka.event.LogMarker
 import akka.persistence.typed._
 import akka.persistence.typed.scaladsl.{
   Effect,
   EventSourcedBehavior,
   RetentionCriteria
 }
-import akka.stream.{Materializer, SystemMaterializer}
+import akka.stream.{Attributes, Materializer, SystemMaterializer}
 import akka.stream.scaladsl.Source
 import com.dounine.ecdouyin.behaviors.client.SocketBehavior
 import com.dounine.ecdouyin.behaviors.mechine.MechineBase._
@@ -78,19 +79,58 @@ object MechineBehavior extends JsonParse {
                           context.system,
                           order
                         )
-                        .map {
-                          case left @ Left(value) => {
+                        .flatMapConcat {
+                          case Left(error) =>
+                            Source.single(CreateOrderFail(e, error.getMessage))
+                          case Right((chrome,order,qrcode)) =>
+                            Source
+                              .single(CreateOrderOk(e, qrcode))
+                              .concat(
+                                QrcodeSources
+                                  .createListenPay(
+                                    context.system,
+                                    chrome,
+                                    order
+                                  )
+                                  .map {
+                                    case Left(error) =>
+                                      OrderBase
+                                        .WebPayFail(
+                                          order = order,
+                                          msg = error.getMessage
+                                        )
+                                    case Right(value) =>
+                                      OrderBase.WebPaySuccess(value)
+                                  }
+                              )
+                        }
+                        .logWithMarker(
+                          name = "qrcodeStream",
+                          element =>
+                            LogMarker(
+                              name = "qrcodeMark",
+                              properties = Map(
+                                "element" -> element
+                              )
+                            )
+                        )
+                        .withAttributes(
+                          Attributes.logLevels(
+                            onElement = Attributes.LogLevels.Info
+                          )
+                        )
+                        .runForeach({
+                          case ee @ CreateOrderFail(request, msg) => {
                             sharding
                               .entityRefFor(
                                 OrderBase.typeKey,
                                 OrderBase.typeKey.name
                               )
                               .tell(
-                                CreateOrderFail(e, value.getMessage)
+                                ee
                               )
-                            left
                           }
-                          case right @ Right(value) => {
+                          case ee @ CreateOrderOk(request, qrcode) => {
                             timers.startSingleTimer(
                               timeoutName,
                               SocketTimeout(Option.empty),
@@ -102,14 +142,12 @@ object MechineBehavior extends JsonParse {
                                 OrderBase.typeKey.name
                               )
                               .tell(
-                                CreateOrderOk(
-                                  e
-                                )
+                                ee
                               )
                             latest.data.actor.foreach(
                               _.tell(
                                 SocketBehavior.OrderCreate(
-                                  image = value.qrcode,
+                                  image = qrcode,
                                   domain = domain,
                                   orderId = order.orderId,
                                   money = order.money,
@@ -119,38 +157,28 @@ object MechineBehavior extends JsonParse {
                                 )
                               )
                             )
-                            right
                           }
-                        }
-                        .flatMapConcat {
-                          case Left(value) => throw value
-                          case Right(value) =>
-                            QrcodeSources
-                              .createListenPay(
-                                context.system,
-                                value.source,
-                                value.order
+                          case ee @ OrderBase.WebPaySuccess(order) => {
+                            sharding
+                              .entityRefFor(
+                                OrderBase.typeKey,
+                                OrderBase.typeKey.name
                               )
-                              .map {
-                                case Left(value) => throw value
-                                case Right(value) =>
-                                  OrderBase.WebPaySuccess(value)
-                              }
-                        }
-                        .recover {
-                          case e =>
-                            OrderBase
-                              .WebPayFail(order = order, msg = e.getMessage)
-                        }
-                        .runForeach(result => {
-                          sharding
-                            .entityRefFor(
-                              OrderBase.typeKey,
-                              OrderBase.typeKey.name
-                            )
-                            .tell(result)
+                              .tell(
+                                ee
+                              )
+                          }
+                          case ee @ OrderBase.WebPayFail(order, msg) => {
+                            sharding
+                              .entityRefFor(
+                                OrderBase.typeKey,
+                                OrderBase.typeKey.name
+                              )
+                              .tell(
+                                ee
+                              )
+                          }
                         })(Materializer(context.system))
-
                       e.replyTo.tell(
                         Disable(latest.data.mechineId)
                       )

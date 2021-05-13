@@ -370,7 +370,7 @@ object IdleStatus extends JsonParse {
           logger.info(command.logJson)
           Effect.none
         }
-        case MechineBase.CreateOrderOk(request) => {
+        case MechineBase.CreateOrderOk(request, _) => {
           logger.info(command.logJson)
           Effect.persist(command)
         }
@@ -531,7 +531,7 @@ object IdleStatus extends JsonParse {
               )
             }
           }
-          case MechineBase.CreateOrderOk(request) => {
+          case MechineBase.CreateOrderOk(request, _) => {
             Idle(
               state.data.copy(
                 lockedOrders =

@@ -23,7 +23,17 @@ object OrderModel {
       mechineStatus: MechinePayStatus,
       payCount: Int,
       createTime: LocalDateTime
-  ) extends BaseSerializer
+  ) extends BaseSerializer {
+    override def hashCode(): Int = orderId.hashCode()
+
+    override def equals(obj: Any): Boolean = {
+      if (obj == null) {
+        false
+      } else {
+        obj.asInstanceOf[DbInfo].orderId == orderId
+      }
+    }
+  }
 
   final case class Recharge(
       apiKey: String,

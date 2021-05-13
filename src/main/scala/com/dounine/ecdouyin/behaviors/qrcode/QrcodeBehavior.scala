@@ -13,7 +13,7 @@ import com.dounine.ecdouyin.model.models.{BaseSerializer, OrderModel}
 import com.dounine.ecdouyin.model.types.service.AppPage
 import com.dounine.ecdouyin.model.types.service.AppPage.AppPage
 import com.dounine.ecdouyin.model.types.service.PayPlatform.PayPlatform
-import com.dounine.ecdouyin.tools.akka.chrome.{ChromePools, ChromeResource}
+import com.dounine.ecdouyin.tools.akka.chrome.{ChromePools, Chrome}
 import com.dounine.ecdouyin.tools.json.JsonParse
 import com.dounine.ecdouyin.tools.util.QrcodeUtil
 import org.openqa.selenium.remote.RemoteWebDriver
@@ -40,7 +40,7 @@ object QrcodeBehavior extends JsonParse {
   final case class DataStore(
       qrcode: Option[String],
       order: Option[OrderModel.DbInfo],
-      resource: Option[ChromeResource]
+      resource: Option[Chrome]
   ) extends BaseSerializer
 
   final case class Create(order: OrderModel.DbInfo)(
@@ -86,7 +86,7 @@ object QrcodeBehavior extends JsonParse {
 
         implicit val ec = context.executionContext
 
-        var chromeResource: Option[ChromeResource] = None
+        var chromeResource: Option[Chrome] = None
         Behaviors
           .receiveMessage[BaseSerializer] {
             case e @ Create(_) => {
@@ -365,8 +365,8 @@ object QrcodeBehavior extends JsonParse {
           .receiveSignal {
             case (_, PostStop) => {
               logger.info(s"qrcode ${entityId.id} stop")
-              chromeResource.foreach(
-                ChromePools(context.system).pools.returnObject
+              chromeResource.foreach(i =>
+                ChromePools(context.system).pools.returnObject(i)
               )
               Behaviors.stopped
             }

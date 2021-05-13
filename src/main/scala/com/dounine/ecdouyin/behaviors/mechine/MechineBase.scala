@@ -94,7 +94,8 @@ object MechineBase {
   )(val replyTo: ActorRef[BaseSerializer])
       extends Command
 
-  final case class CreateOrderOk(request: CreateOrder) extends Command
+  final case class CreateOrderOk(request: CreateOrder, qrcode: String)
+      extends Command
 
   final case class CreateOrderFail(request: CreateOrder, msg: String)
       extends Command

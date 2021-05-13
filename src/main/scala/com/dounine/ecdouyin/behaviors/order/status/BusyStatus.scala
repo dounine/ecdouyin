@@ -308,7 +308,7 @@ object BusyStatus extends JsonParse {
           logger.info(command.logJson)
           Effect.none
         }
-        case MechineBase.CreateOrderOk(request) => {
+        case MechineBase.CreateOrderOk(request, qrcode) => {
           logger.info(command.logJson)
           Effect.persist(command)
         }
@@ -484,7 +484,7 @@ object BusyStatus extends JsonParse {
               )
             )
           }
-          case MechineBase.CreateOrderOk(request) => {
+          case MechineBase.CreateOrderOk(request, qrcode) => {
             Busy(
               state.data.copy(
                 lockedOrders =

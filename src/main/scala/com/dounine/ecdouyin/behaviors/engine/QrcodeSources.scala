@@ -1,20 +1,102 @@
-package com.dounine.ecdouyin.behaviors.qrcode
+package com.dounine.ecdouyin.behaviors.engine
 
 import akka.NotUsed
-import akka.actor.typed.ActorSystem
-import akka.stream.scaladsl.Source
-import com.dounine.ecdouyin.model.models.OrderModel
-import com.dounine.ecdouyin.tools.akka.chrome.{ChromePools, Chrome}
+import akka.actor.typed.{ActorRef, ActorSystem}
+import akka.stream.{Attributes, DelayOverflowStrategy}
+import akka.stream.scaladsl.{DelayStrategy, Flow, Source}
+import com.dounine.ecdouyin.model.models.{BaseSerializer, OrderModel}
+import com.dounine.ecdouyin.tools.akka.chrome.{Chrome, ChromePools}
 import org.openqa.selenium.{By, OutputType}
 import org.slf4j.LoggerFactory
 
-import java.io.File
+import java.time.LocalDateTime
 import scala.concurrent.Future
-import scala.util.{Failure, Success}
 
 object QrcodeSources {
 
   private val logger = LoggerFactory.getLogger(QrcodeSources.getClass)
+  case class AppInfo(
+      appId: String,
+      client: ActorRef[BaseSerializer],
+      balance: BigDecimal
+  ) extends BaseSerializer {
+    override def hashCode(): Int = appId.hashCode
+
+    override def equals(obj: Any): Boolean = {
+      if (obj == null) {
+        false
+      } else {
+        appId == obj.asInstanceOf[AppInfo].appId
+      }
+    }
+  }
+
+  case class Online(
+      app: AppInfo
+  ) extends BaseSerializer
+
+  case class Offline(appId: String) extends BaseSerializer
+
+  case class Idle(
+      app: AppInfo
+  ) extends BaseSerializer
+
+  case class Working(
+      app: AppInfo
+  ) extends BaseSerializer
+
+  def createCoreFlow(
+      system: ActorSystem[_]
+  ): Flow[BaseSerializer, BaseSerializer, NotUsed] = {
+    implicit val ec = system.executionContext
+    Flow[BaseSerializer]
+      .flatMapConcat {
+        case r @ OrderSources.CreateOrderPush(request, order) => {
+          createQrcodeSource(
+            system,
+            order
+          ).flatMapConcat {
+            case Left(error) => {
+              Source(
+                OrderSources.PayError(r, error.getMessage) :: AppSources
+                  .Idle(request.appInfo) :: Nil
+              )
+            }
+            case Right((chrome, order, qrcode)) =>
+              Source
+                .single(
+                  AppSources.PayPush(
+                    r,
+                    qrcode
+                  )
+                )
+                .concat(
+                  createListenPay(
+                    system,
+                    chrome,
+                    order
+                  ).flatMapConcat {
+                    case Left(error) =>
+                      Source(
+                        OrderSources.PayError(
+                          request = r,
+                          error = error.getMessage
+                        ) :: AppSources.Idle(request.appInfo)
+                          :: Nil
+                      )
+                    case Right(value) =>
+                      Source(
+                        OrderSources.PaySuccess(
+                          request = r
+                        ) :: AppSources.Idle(request.appInfo) :: Nil
+                      )
+                  }
+                )
+          }
+        }
+        case ee => Source.single(ee)
+      }
+  }
 
   /**
     * 申请chrome浏览器
@@ -121,8 +203,16 @@ object QrcodeSources {
               }
             }
             .flatMapConcat { driver =>
-              Source(1 to 2)
-                .throttle(1, 200.milliseconds)
+              Source(1 to 4)
+                .delayWith(
+                  delayStrategySupplier = () =>
+                    DelayStrategy.linearIncreasingDelay(
+                      increaseStep = 200.milliseconds,
+                      needsIncrease = _ => true
+                    ),
+                  overFlowStrategy =
+                    DelayOverflowStrategy.backpressure
+                )
                 .mapAsync(1) { _ =>
                   Future {
                     logger.info("查询二次确认框跟跳转")
@@ -155,7 +245,15 @@ object QrcodeSources {
                       case Left(clickSuccess) => {
                         logger.info("检查页面是否跳转")
                         Source(1 to 4)
-                          .throttle(1, 500.milliseconds)
+                          .delayWith(
+                            delayStrategySupplier = () =>
+                              DelayStrategy.linearIncreasingDelay(
+                                increaseStep = 200.milliseconds,
+                                needsIncrease = _ => true
+                              ),
+                            overFlowStrategy =
+                              DelayOverflowStrategy.backpressure
+                          )
                           .map(_ => driver.getCurrentUrl)
                           .filter(_.contains("tp-pay.snssdk.com"))
                           .map(_ => Right(true))
@@ -182,6 +280,15 @@ object QrcodeSources {
                 }
                 .flatMapConcat { driver =>
                   Source(1 to 3)
+                    .delayWith(
+                      delayStrategySupplier = () =>
+                        DelayStrategy.linearIncreasingDelay(
+                          increaseStep = 200.milliseconds,
+                          needsIncrease = _ => true
+                        ),
+                      overFlowStrategy =
+                        DelayOverflowStrategy.backpressure
+                    )
                     .mapAsync(1) { _ =>
                       Future {
                         logger.info("查找二维码图片")

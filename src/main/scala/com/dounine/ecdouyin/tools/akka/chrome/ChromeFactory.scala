@@ -2,17 +2,23 @@ package com.dounine.ecdouyin.tools.akka.chrome
 
 import akka.actor.typed.ActorSystem
 import org.apache.commons.pool2.impl.DefaultPooledObject
-import org.apache.commons.pool2.{BasePooledObjectFactory, PooledObject}
+import org.apache.commons.pool2.{
+  BaseKeyedPooledObjectFactory,
+  BasePooledObjectFactory,
+  PooledObject
+}
 import org.slf4j.{Logger, LoggerFactory}
+
 import scala.jdk.CollectionConverters._
 class ChromeFactory(system: ActorSystem[_])
-    extends BasePooledObjectFactory[ChromeResource] {
+    extends BasePooledObjectFactory[Chrome] {
 
   private val logger: Logger = LoggerFactory.getLogger(classOf[ChromeFactory])
 
-  override def create(): ChromeResource = {
-    new ChromeResource(system)
+  override def create(): Chrome = {
+    new Chrome(system, Thread.currentThread().getId.toString)
   }
+
   //borrowObject	从池中借出一个对象。要么调用PooledObjectFactory.makeObject方法创建，要么对一个空闲对象使用PooledObjectFactory.activeObject进行激活，然后使用PooledObjectFactory.validateObject方法进行验证后再返回
   //returnObject	将一个对象返还给池。根据约定：对象必须 是使用borrowObject方法从池中借出的
   //invalidateObject	废弃一个对象。根据约定：对象必须 是使用borrowObject方法从池中借出的。通常在对象发生了异常或其他问题时使用此方法废弃它
@@ -28,15 +34,15 @@ class ChromeFactory(system: ActorSystem[_])
 //  }
 
   //每一个钝化（passivated）的ObjectPool实例从池中借出（borrowed）前调用
-  override def activateObject(p: PooledObject[ChromeResource]): Unit = {
+  override def activateObject(p: PooledObject[Chrome]): Unit = {
     p.getObject.refresh()
   }
 
-  override def wrap(t: ChromeResource): PooledObject[ChromeResource] =
-    new DefaultPooledObject[ChromeResource](t)
+  override def wrap(t: Chrome): PooledObject[Chrome] =
+    new DefaultPooledObject[Chrome](t)
 
   //当ObjectPool实例返还池中的时候调用
-  override def passivateObject(p: PooledObject[ChromeResource]): Unit = {
+  override def passivateObject(p: PooledObject[Chrome]): Unit = {
     val resource = p.getObject
     val driver = resource.driver()
     val originHandler = driver.getWindowHandle
@@ -52,18 +58,24 @@ class ChromeFactory(system: ActorSystem[_])
   }
 
   //当ObjectPool实例从池中被清理出去丢弃的时候调用（是否根据validateObject的测试结果由具体的实现在而定）
-  override def destroyObject(p: PooledObject[ChromeResource]): Unit = {
-    super.destroyObject(p)
-    try {
-      if (p.getObject.driver() != null) {
-        val resource = p.getObject
-        resource.driver().quit()
-      }
-    } catch {
-      case e: Exception =>
-    }
+  override def destroyObject(p: PooledObject[Chrome]): Unit = {
+    logger.info("destroyObject")
+    p.getObject.webDriver.close()
+    p.getObject.webDriver.quit()
+//    p.getObject.webDriver.quit()
+//    super.destroyObject(p)
+//    try {
+//      if (p.getObject.driver() != null) {
+//        val resource = p.getObject
+//        resource.driver().quit()
+//      }
+//    } catch {
+//      case e: Exception =>
+//    }
   }
 
   //可能用于从池中借出对象时，对处于激活（activated）状态的ObjectPool实例进行测试确保它是有效的。也有可能在ObjectPool实例返还池中进行钝化前调用进行测试是否有效。它只对处于激活状态的实例调用
-  override def validateObject(p: PooledObject[ChromeResource]): Boolean = true
+  override def validateObject(p: PooledObject[Chrome]): Boolean =
+    p.getObject.isLive()
+
 }

@@ -32,6 +32,8 @@ class OrderService(system: ActorSystem[_]) extends EnumMappers {
   private val dict: TableQuery[OrderTable] =
     TableQuery[OrderTable]
 
+  private val userDict = TableQuery[UserTable]
+
   implicit val ec = system.executionContext
   implicit val materializer = SystemMaterializer(system).materializer
   private val logger = LoggerFactory.getLogger(classOf[OrderService])
@@ -50,6 +52,70 @@ class OrderService(system: ActorSystem[_]) extends EnumMappers {
     db.run(
       insertAndGetId += info
     )
+  }
+
+  def addOrderAndMarginUser(info: OrderModel.DbInfo): Future[Long] = {
+    db.run((for {
+      orderId <- insertAndGetId += info
+      userInfo <- userDict.filter(_.apiKey === info.apiKey).result.head
+      _: Int <-
+        userDict
+          .filter(_.apiKey === info.apiKey)
+          .map(i => (i.margin, i.balance))
+          .update(
+            (userInfo.margin + info.margin, userInfo.balance - info.margin)
+          )
+    } yield orderId).transactionally)
+  }
+
+  def unMarginOrderAppendToUser(
+      info: OrderModel.DbInfo,
+      margin: BigDecimal
+  ): Future[Int] = {
+    db.run((for {
+      _ <-
+        dict
+          .filter(_.orderId === info.orderId)
+          .map(item =>
+            (
+              item.margin,
+              item.status,
+              item.payCount
+            )
+          )
+          .update((info.margin, info.status, info.payCount))
+      userInfo <- userDict.filter(_.apiKey === info.apiKey).result.head
+      updateUser <-
+        userDict
+          .filter(_.apiKey === info.apiKey)
+          .map(i => (i.margin, i.balance))
+          .update(userInfo.margin - margin, userInfo.balance + margin)
+    } yield updateUser).transactionally)
+  }
+
+  def releaseMarginOrderToUser(
+      info: OrderModel.DbInfo,
+      margin: BigDecimal
+  ): Future[Int] = {
+    db.run((for {
+      _ <-
+        dict
+          .filter(_.orderId === info.orderId)
+          .map(item =>
+            (
+              item.margin,
+              item.status,
+              item.payCount
+            )
+          )
+          .update((info.margin, info.status, info.payCount))
+      userInfo <- userDict.filter(_.apiKey === info.apiKey).result.head
+      updateUser <-
+        userDict
+          .filter(_.apiKey === info.apiKey)
+          .map(_.margin)
+          .update(userInfo.margin - margin)
+    } yield updateUser).transactionally)
   }
 
   def cancelOrder(orderId: Long): Future[Int] = {
@@ -80,6 +146,19 @@ class OrderService(system: ActorSystem[_]) extends EnumMappers {
       dict.insertOrUpdate(info)
     )
 
+  def updateAll(info: OrderModel.DbInfo): Future[Int] =
+    db.run(
+      dict
+        .filter(_.orderId === info.orderId)
+        .map(item =>
+          (
+            item.margin,
+            item.status,
+            item.payCount
+          )
+        )
+        .update((info.margin, info.status, info.payCount))
+    )
 
   def userInfo(
       platform: PayPlatform,

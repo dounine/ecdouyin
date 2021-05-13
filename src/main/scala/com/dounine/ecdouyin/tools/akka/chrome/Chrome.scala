@@ -17,12 +17,12 @@ import java.time.LocalDateTime
 import java.util.concurrent.TimeUnit
 import scala.concurrent.{ExecutionContextExecutor, Future}
 
-class ChromeResource(system: ActorSystem[_]) extends JsonParse {
+class Chrome(system: ActorSystem[_], id: String) extends JsonParse {
 
   private final val config: Config = system.settings.config.getConfig("app")
 
   val createTime = LocalDateTime.now()
-  private val logger = LoggerFactory.getLogger(classOf[ChromeResource])
+  private val logger = LoggerFactory.getLogger(classOf[Chrome])
   implicit val materialize: Materializer = SystemMaterializer(
     system
   ).materializer
@@ -43,10 +43,15 @@ class ChromeResource(system: ActorSystem[_]) extends JsonParse {
         config.getInt("selenium.size.height")
       )
     )
-  this.webDriver.get("https://www.douyin.com/falcon/webcast_openpc/pages/douyin_recharge/index.html?is_new_connect=0&is_new_user=0")
+  val threadId = id
+  private var chromeLive = true
+  this.webDriver.get(
+    "https://www.douyin.com/falcon/webcast_openpc/pages/douyin_recharge/index.html?is_new_connect=0&is_new_user=0"
+  )
 
   def driver(cookieName: String): Future[RemoteWebDriver] = {
-    ServiceSingleton.get(classOf[DictionaryService])
+    ServiceSingleton
+      .get(classOf[DictionaryService])
       .info(cookieName)
       .map {
         case Some(cookie) => {
@@ -88,5 +93,13 @@ class ChromeResource(system: ActorSystem[_]) extends JsonParse {
     )
   }
   def driver(): RemoteWebDriver = this.webDriver
+
+  def isLive(): Boolean = {
+    this.chromeLive
+  }
+
+  def dead(): Unit = {
+    this.chromeLive = false
+  }
 
 }

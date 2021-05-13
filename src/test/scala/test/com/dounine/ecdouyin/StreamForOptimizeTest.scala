@@ -1,12 +1,23 @@
 package test.com.dounine.ecdouyin
 
 import akka.{Done, NotUsed}
-import akka.actor.testkit.typed.scaladsl.{LogCapturing, ScalaTestWithActorTestKit}
+import akka.actor.testkit.typed.scaladsl.{
+  LogCapturing,
+  ScalaTestWithActorTestKit
+}
 import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.Behaviors
-import akka.stream.{Materializer, RestartSettings, SystemMaterializer}
+import akka.event.LogMarker
+import akka.stream.{
+  Attributes,
+  Materializer,
+  OverflowStrategy,
+  RestartSettings,
+  SystemMaterializer
+}
 import akka.stream.scaladsl.{RestartSource, Sink, Source}
 import akka.stream.testkit.scaladsl.TestSink
+import akka.stream.typed.scaladsl.ActorSource
 import com.dounine.ecdouyin.store.EnumMappers
 import com.typesafe.config.ConfigFactory
 import org.scalatest.matchers.should.Matchers
@@ -42,11 +53,22 @@ object QrcodeTest {
   }
 
 }
+case class HelloSet(name: String, age: Int) {
+  override def hashCode() = name.hashCode
+
+  override def equals(obj: Any) = {
+    if (obj == null) {
+      false
+    } else {
+      obj.asInstanceOf[HelloSet].name == name
+    }
+  }
+}
 class StreamForOptimizeTest
     extends ScalaTestWithActorTestKit(
       ConfigFactory
         .parseString(s"""
-                      |akka.remote.artery.canonical.port = 25521
+                      |akka.remote.artery.canonical.port = 25520
                       |akka.persistence.journal.leveldb.dir = "/tmp/journal_${classOf[
           StreamForOptimizeTest
         ].getSimpleName}"
@@ -69,7 +91,62 @@ class StreamForOptimizeTest
 
   "stream optimize" should {
 
-    "actor and source test" in {
+    "set case class equals" ignore {
+      val list = Set(HelloSet("a", 1), HelloSet("b", 2), HelloSet("a", 2))
+      list.size shouldBe 2
+    }
+
+    "log marker" ignore {
+      Source(1 to 3)
+        .log("payStream")
+        .addAttributes(
+          attr = Attributes.logLevels(
+            onElement = Attributes.LogLevels.Info
+          )
+        )
+        .runForeach(i => {
+          info(i.toString)
+        })
+        .futureValue shouldBe Done
+    }
+    "staful test " ignore {
+      Source
+        .single(1)
+        .statefulMapConcat {
+          () =>
+            { el =>
+              Array(1, 2, 3, 4)
+            }
+        }
+        .runWith(Sink.seq)
+        .futureValue shouldBe Seq(1, 2, 3, 4)
+
+    }
+
+    "source form actor" ignore {
+//      val ref = ActorSource.actorRefWithBackpressure[String,String](
+//        completionMatcher = {
+//          case "finish" =>
+//        },
+//        failureMatcher = {
+//          case "error" => new Exception("error")
+//        },
+//        bufferSize = 2,
+//        overflowStrategy = OverflowStrategy.backpressure
+//      )
+//        .to(Sink.foreach(i => {
+//          TimeUnit.SECONDS.sleep(3)
+//          println(i)
+//        }))
+//        .run()
+//
+//      ref ! "hello"
+//      ref ! "hello"
+//      ref ! "hello"
+//      ref ! "hello"
+    }
+
+    "actor and source test" ignore {
       val behavior = system.systemActorOf(QrcodeTest(), "hello")
       behavior.tell("hello")
       TimeUnit.SECONDS.sleep(2)
@@ -78,27 +155,33 @@ class StreamForOptimizeTest
     }
 
     "multi source terminal" ignore {
-      val a = Source
+      Source
         .single(1)
         .map(i => i)
+        .flatMapConcat { source =>
+          Source(1 to 10)
+        }
         .watchTermination()((pv, future) => {
-          future.onComplete {
-            case Failure(exception) => throw exception
-            case Success(value)     => println("======= error1")
-          }
+          future.foreach(_ => {
+            info("done")
+          })
           pv
         })
-
-      a.map(_ * 2)
-        .watchTermination()((pv, future) => {
-          future.onComplete {
-            case Failure(exception) => throw exception
-            case Success(value)     => println("------ error2")
-          }
-          pv
-        })
-        .run()
-        .futureValue shouldBe Done
+        .logWithMarker(
+          "mystream",
+          e =>
+            LogMarker(
+              name = "myMarker",
+              properties = Map("element" -> e)
+            )
+        )
+        .addAttributes(
+          Attributes.logLevels(
+            onElement = Attributes.LogLevels.Info
+          )
+        )
+        .runWith(Sink.last)
+        .futureValue shouldBe 2
     }
 
     "finish error" ignore {
