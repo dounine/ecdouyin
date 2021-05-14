@@ -169,12 +169,15 @@ object OrderSources extends ActorSerializerSuport {
             ) :: OrderCallback(order) :: Nil
           }
           case PayError(request, error) => {
-            val order = if (request.order.payCount >= 3) {
-              request.order.copy(
+            var order = request.order.copy(
+              payCount = request.order.payCount + 1
+            )
+            order = if (order.payCount >= 3) {
+              order.copy(
                 status = PayStatus.payerr
               )
             } else {
-              request.order.copy(
+              order.copy(
                 payCount = request.order.payCount + 1
               )
             }
