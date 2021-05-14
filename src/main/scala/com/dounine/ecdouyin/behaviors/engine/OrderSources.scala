@@ -294,6 +294,7 @@ object OrderSources extends ActorSerializerSuport {
           Future.successful(ee)
         }
       }
+      .log()
 
   }
 

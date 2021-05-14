@@ -132,6 +132,7 @@ object AppSources extends ActorSerializerSuport {
           case ee @ _ => ee :: Nil
         }
       }
+      .log()
   }
 
 }

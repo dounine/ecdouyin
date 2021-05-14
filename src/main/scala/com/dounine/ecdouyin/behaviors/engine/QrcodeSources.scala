@@ -121,6 +121,7 @@ object QrcodeSources extends ActorSerializerSuport {
           case ee => Source.single(ee)
         }
       )
+      .log()
   }
 
   /**
