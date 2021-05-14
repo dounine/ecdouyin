@@ -9,8 +9,7 @@ import akka.stream._
 import akka.stream.scaladsl.{Sink, Source}
 import com.dounine.ecdouyin.behaviors.cache.ReplicatedCacheBehavior
 import com.dounine.ecdouyin.behaviors.engine.{CoreEngine, OrderSources}
-import com.dounine.ecdouyin.behaviors.order.OrderBase
-import com.dounine.ecdouyin.behaviors.qrcode.{QrcodeBehavior, QrcodeSources}
+import com.dounine.ecdouyin.behaviors.qrcode.QrcodeSources
 import com.dounine.ecdouyin.model.models.OrderModel
 import com.dounine.ecdouyin.model.types.service.PayPlatform.PayPlatform
 import com.dounine.ecdouyin.model.types.service.{
@@ -269,7 +268,6 @@ class OrderRouter(system: ActorSystem[_]) extends SuportRouter {
                           margin = BigDecimal(order.money),
                           platform = order.platform,
                           status = PayStatus.normal,
-                          mechineStatus = MechinePayStatus.normal,
                           payCount = 0,
                           createTime = LocalDateTime.now()
                         )
@@ -324,69 +322,69 @@ class OrderRouter(system: ActorSystem[_]) extends SuportRouter {
               }
           }
         }
-      },
-      post {
-        path("order" / "cancel") {
-          entity(as[OrderModel.Cancel]) {
-            order =>
-              {
-                logger.info(order.logJson)
-                require(
-                  order.orderId.isDefined || order.outOrder.isDefined,
-                  orderAndOutOrderRequireOn
-                )
-                val result = userService
-                  .info(order.apiKey)
-                  .flatMap {
-                    case Some(value) =>
-                      require(
-                        MD5Util.md5(
-                          value.apiSecret + order.orderId
-                            .getOrElse(order.outOrder.get)
-                        ) == order.sign,
-                        signInvalidMsg
-                      )
-                      if (order.orderId.isDefined)
-                        Future.successful(order.orderId.get.toLong)
-                      else {
-                        orderService.infoOutOrder(order.outOrder.get).map {
-                          case Some(order) => order.orderId
-                          case None        => throw new Exception(orderNotFound)
-                        }
-                      }
-                    case None => throw new Exception(signInvalidMsg)
-                  }
-                  .flatMap { orderId =>
-                    sharding
-                      .entityRefFor(
-                        OrderBase.typeKey,
-                        OrderBase.typeKey.name
-                      )
-                      .ask(
-                        OrderBase.Cancel(
-                          orderId
-                        )
-                      )(3.seconds)
-                      .map {
-                        case OrderBase.CancelOk() => 1
-                        case OrderBase.CancelFail(msg) =>
-                          throw new Exception(msg)
-                      }
-                  }
-                onComplete(result) {
-                  case Failure(exception) => fail(exception.getMessage)
-                  case Success(value) => {
-                    if (value == 1) {
-                      ok
-                    } else {
-                      fail(orderNotFound)
-                    }
-                  }
-                }
-              }
-          }
-        }
       }
+//      post {
+//        path("order" / "cancel") {
+//          entity(as[OrderModel.Cancel]) {
+//            order =>
+//              {
+//                logger.info(order.logJson)
+//                require(
+//                  order.orderId.isDefined || order.outOrder.isDefined,
+//                  orderAndOutOrderRequireOn
+//                )
+//                val result = userService
+//                  .info(order.apiKey)
+//                  .flatMap {
+//                    case Some(value) =>
+//                      require(
+//                        MD5Util.md5(
+//                          value.apiSecret + order.orderId
+//                            .getOrElse(order.outOrder.get)
+//                        ) == order.sign,
+//                        signInvalidMsg
+//                      )
+//                      if (order.orderId.isDefined)
+//                        Future.successful(order.orderId.get.toLong)
+//                      else {
+//                        orderService.infoOutOrder(order.outOrder.get).map {
+//                          case Some(order) => order.orderId
+//                          case None        => throw new Exception(orderNotFound)
+//                        }
+//                      }
+//                    case None => throw new Exception(signInvalidMsg)
+//                  }
+//                  .flatMap { orderId =>
+//                    sharding
+//                      .entityRefFor(
+//                        OrderBase.typeKey,
+//                        OrderBase.typeKey.name
+//                      )
+//                      .ask(
+//                        OrderBase.Cancel(
+//                          orderId
+//                        )
+//                      )(3.seconds)
+//                      .map {
+//                        case OrderBase.CancelOk() => 1
+//                        case OrderBase.CancelFail(msg) =>
+//                          throw new Exception(msg)
+//                      }
+//                  }
+//                onComplete(result) {
+//                  case Failure(exception) => fail(exception.getMessage)
+//                  case Success(value) => {
+//                    if (value == 1) {
+//                      ok
+//                    } else {
+//                      fail(orderNotFound)
+//                    }
+//                  }
+//                }
+//              }
+//          }
+//        }
+//      }
     )
 
 }

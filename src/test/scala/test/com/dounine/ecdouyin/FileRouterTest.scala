@@ -15,7 +15,6 @@ import akka.management.scaladsl.AkkaManagement
 import akka.stream.scaladsl.{FileIO, Sink, Source}
 import akka.util.ByteString
 import com.dounine.ecdouyin.EcDouyin.logger
-import com.dounine.ecdouyin.behaviors.order.OrderBase
 import com.dounine.ecdouyin.router.routers.{BindRouters, FileRouter, HealthRouter, OrderRouter, WebsocketRouter}
 import com.dounine.ecdouyin.service.OrderService
 import com.dounine.ecdouyin.store.EnumMappers

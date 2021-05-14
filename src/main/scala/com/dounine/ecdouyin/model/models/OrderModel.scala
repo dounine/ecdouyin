@@ -20,7 +20,6 @@ object OrderModel {
       margin: BigDecimal,
       platform: PayPlatform,
       status: PayStatus,
-      mechineStatus: MechinePayStatus,
       payCount: Int,
       createTime: LocalDateTime
   ) extends BaseSerializer {

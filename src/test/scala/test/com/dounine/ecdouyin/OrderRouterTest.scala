@@ -15,9 +15,6 @@ import akka.management.scaladsl.AkkaManagement
 import akka.persistence.typed.PersistenceId
 import akka.stream.scaladsl.{FileIO, Sink, Source}
 import akka.util.ByteString
-import com.dounine.ecdouyin.behaviors.mechine.{MechineBase, MechineBehavior}
-import com.dounine.ecdouyin.behaviors.order.{OrderBase, OrderBehavior}
-import com.dounine.ecdouyin.behaviors.qrcode.QrcodeBehavior
 import com.dounine.ecdouyin.model.models.{OrderModel, UserModel}
 import com.dounine.ecdouyin.model.types.service.PayPlatform
 import com.dounine.ecdouyin.router.routers.{BindRouters, FileRouter, HealthRouter, OrderRouter, WebsocketRouter}
@@ -68,15 +65,6 @@ class OrderRouterTest
   val sharding = ClusterSharding(system)
   protected override def afterAll(): Unit = {
     import scala.concurrent.duration._
-    Await.result(
-      sharding
-        .entityRefFor(
-          OrderBase.typeKey,
-          OrderBase.typeKey.name
-        )
-        .ask(OrderBase.Shutdown()(_))(3.seconds),
-      Duration.Inf
-    )
     db.close()
     super.afterAll()
   }
@@ -121,47 +109,6 @@ class OrderRouterTest
       }
     })
 
-    sharding.init(
-      Entity(
-        typeKey = MechineBase.typeKey
-      )(
-        createBehavior = entityContext =>
-          MechineBehavior(
-            PersistenceId.of(
-              MechineBase.typeKey.name,
-              entityContext.entityId
-            )
-          )
-      )
-    )
-
-    sharding.init(
-      Entity(
-        typeKey = QrcodeBehavior.typeKey
-      )(
-        createBehavior = entityContext =>
-          QrcodeBehavior(
-            PersistenceId.of(
-              QrcodeBehavior.typeKey.name,
-              entityContext.entityId
-            )
-          )
-      )
-    )
-
-    val orderBehavior = sharding.init(
-      Entity(
-        typeKey = OrderBase.typeKey
-      )(
-        createBehavior = entityContext =>
-          OrderBehavior(
-            PersistenceId.of(
-              OrderBase.typeKey.name,
-              entityContext.entityId
-            )
-          )
-      )
-    )
 
     Http(system)
       .newServerAt(
@@ -172,12 +119,6 @@ class OrderRouterTest
       .onComplete({
         case Failure(exception) => throw exception
         case Success(value) =>
-          orderBehavior.tell(
-            ShardingEnvelope(
-              OrderBase.typeKey.name,
-              OrderBase.Run()
-            )
-          )
           println(
             s"""${appName} server http://${value.localAddress.getHostName}:${value.localAddress.getPort} running"""
           )

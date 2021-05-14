@@ -10,7 +10,6 @@ import akka.persistence.typed.PersistenceId
 import akka.stream.alpakka.udp.Datagram
 import akka.stream.alpakka.udp.scaladsl.Udp
 import akka.stream.scaladsl.{Flow, Sink, Source}
-import com.dounine.ecdouyin.behaviors.client.SocketBehavior
 import com.dounine.ecdouyin.model.models.{StockTimeSerieModel, UserModel}
 import com.dounine.ecdouyin.model.types.service.IntervalStatus
 import com.dounine.ecdouyin.service.UserService

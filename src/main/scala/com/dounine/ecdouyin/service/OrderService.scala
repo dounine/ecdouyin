@@ -201,17 +201,6 @@ class OrderService(system: ActorSystem[_]) extends EnumMappers {
       }
   }
 
-  def updateMechineStatus(
-      orderId: Long,
-      mechineStatus: MechinePayStatus
-  ): Future[Int] =
-    db.run(
-      dict
-        .filter(_.orderId === orderId)
-        .map(_.mechineStatus)
-        .update(mechineStatus)
-    )
-
   def callback(
       order: OrderModel.DbInfo,
       status: PayStatus,

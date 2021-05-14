@@ -83,7 +83,6 @@ class OrderTableTest
         payCount = 0,
         platform = PayPlatform.douyin,
         status = PayStatus.normal,
-        mechineStatus = MechinePayStatus.normal,
         createTime = LocalDateTime.now()
       )
 

@@ -5,7 +5,6 @@ import akka.actor.CoordinatedShutdown
 import akka.actor.typed.ActorSystem
 import akka.cluster.sharding.typed.scaladsl.ClusterSharding
 import com.dounine.ecdouyin.behaviors.engine.CoreEngine
-import com.dounine.ecdouyin.behaviors.order.OrderBase
 import com.dounine.ecdouyin.tools.akka.chrome.ChromePools
 import com.dounine.ecdouyin.tools.akka.db.DataSource
 import org.slf4j.LoggerFactory

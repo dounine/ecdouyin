@@ -25,7 +25,6 @@ class OrderTable(tag: Tag)
       margin,
       platform,
       status,
-      mechineStatus,
       payCount,
       createTime
     ).mapTo[OrderModel.DbInfo]
@@ -54,8 +53,6 @@ class OrderTable(tag: Tag)
 
   def status: Rep[PayStatus] =
     column[PayStatus]("status", O.Length(PayStatus.dbLength))
-
-  def mechineStatus: Rep[MechinePayStatus] = column[MechinePayStatus]("mechineStatus", O.Length(20))
 
   def createTime: Rep[LocalDateTime] =
     column[LocalDateTime]("createTime", O.SqlType("timestamp"), O.Length(3))(

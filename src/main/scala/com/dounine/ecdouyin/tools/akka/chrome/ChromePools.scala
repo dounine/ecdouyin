@@ -11,6 +11,8 @@ import org.apache.commons.pool2.impl.{
 
 class ChromePools(system: ActorSystem[_]) extends Extension {
 
+  println("chrome pools create -------------------")
+
   private final val config: Config = system.settings.config.getConfig("app")
   private val poolConfig: GenericObjectPoolConfig[Chrome] =
     new GenericObjectPoolConfig()
@@ -29,19 +31,17 @@ class ChromePools(system: ActorSystem[_]) extends Extension {
     config.getBoolean("selenium.pool.blockWhenExhausted")
   )
 
-  private val chromeFactory = new ChromeFactory(system)
   private val _pools =
-    new GenericObjectPool[Chrome](chromeFactory, poolConfig)
+    new GenericObjectPool[Chrome](new ChromeFactory(system), poolConfig)
 
-  def pools: GenericObjectPool[Chrome] = _pools
-  
+  val pools: GenericObjectPool[Chrome] = _pools
+
 }
 
 object ChromePools extends ExtensionId[ChromePools] {
 
-  override def createExtension(system: ActorSystem[_]): ChromePools = {
+  override def createExtension(system: ActorSystem[_]): ChromePools =
     new ChromePools(system)
-  }
 
   def get(system: ActorSystem[_]): ChromePools = apply(system)
 }

@@ -7,9 +7,6 @@ import akka.cluster.sharding.typed.ShardingEnvelope
 import akka.cluster.sharding.typed.scaladsl.{ClusterSharding, Entity}
 import akka.persistence.typed.PersistenceId
 import com.dounine.ecdouyin.behaviors.engine.{CoreEngine, OrderSources}
-import com.dounine.ecdouyin.behaviors.mechine.{MechineBase, MechineBehavior}
-import com.dounine.ecdouyin.behaviors.order.{OrderBase, OrderBehavior}
-import com.dounine.ecdouyin.behaviors.qrcode.QrcodeBehavior
 import com.dounine.ecdouyin.model.models.UserModel
 import com.dounine.ecdouyin.service.{
   DictionaryService,
@@ -53,34 +50,6 @@ class Startups(system: ActorSystem[_]) {
           )
       )
     )
-
-//    sharding.init(
-//      Entity(
-//        typeKey = QrcodeBehavior.typeKey
-//      )(
-//        createBehavior = entityContext =>
-//          QrcodeBehavior(
-//            PersistenceId.of(
-//              QrcodeBehavior.typeKey.name,
-//              entityContext.entityId
-//            )
-//          )
-//      )
-//    )
-
-//    sharding.init(
-//      Entity(
-//        typeKey = OrderBase.typeKey
-//      )(
-//        createBehavior = entityContext =>
-//          OrderBehavior(
-//            PersistenceId.of(
-//              OrderBase.typeKey.name,
-//              entityContext.entityId
-//            )
-//          )
-//      )
-//    )
 
     ServiceSingleton.put(classOf[OrderService], new OrderService(system))
     ServiceSingleton.put(classOf[UserService], new UserService(system))
