@@ -255,6 +255,9 @@ object OrderSources extends ActorSerializerSuport {
               case None =>
                 Future.successful(OrderCallbackFail(request, "apiKey not exit"))
             }
+            .recover {
+              case ee => OrderCallbackFail(request, ee.getMessage)
+            }
         }
         case request @ QueryOrder(repeat, pub) => {
           orderService

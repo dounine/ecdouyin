@@ -67,14 +67,14 @@ object QrcodeSources extends ActorSerializerSuport {
       .collectType[Event]
       .log()
       .flatMapMerge(
-        10,
+        30,
         {
           case r @ CreateOrderPush(request, order) => {
             createQrcodeSource(
               system,
               order
             ).flatMapMerge(
-              10,
+              20,
               {
                 case Left(error) => {
                   Source(
@@ -95,22 +95,25 @@ object QrcodeSources extends ActorSerializerSuport {
                         system,
                         chrome,
                         order
-                      ).flatMapConcat {
-                        case Left(error) =>
-                          Source(
-                            OrderSources.PayError(
-                              request = r,
-                              error = error.getMessage
-                            ) :: AppSources.Idle(request.appInfo)
-                              :: Nil
-                          )
-                        case Right(value) =>
-                          Source(
-                            OrderSources.PaySuccess(
-                              request = r
-                            ) :: AppSources.Idle(request.appInfo) :: Nil
-                          )
-                      }
+                      ).flatMapMerge(
+                        10,
+                        {
+                          case Left(error) =>
+                            Source(
+                              OrderSources.PayError(
+                                request = r,
+                                error = error.getMessage
+                              ) :: AppSources.Idle(request.appInfo)
+                                :: Nil
+                            )
+                          case Right(value) =>
+                            Source(
+                              OrderSources.PaySuccess(
+                                request = r
+                              ) :: AppSources.Idle(request.appInfo) :: Nil
+                            )
+                        }
+                      )
                     )
               }
             )
