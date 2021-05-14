@@ -7,7 +7,7 @@ import akka.stream.Attributes
 import akka.stream.scaladsl.Flow
 import com.dounine.ecdouyin.model.models.{BaseSerializer, OrderModel}
 import com.dounine.ecdouyin.model.types.service.PayStatus
-import com.dounine.ecdouyin.service.OrderService
+import com.dounine.ecdouyin.service.{OrderService, UserService}
 import com.dounine.ecdouyin.tools.json.{ActorSerializerSuport, JsonParse}
 import com.dounine.ecdouyin.tools.util.ServiceSingleton
 import org.slf4j.LoggerFactory
@@ -60,8 +60,16 @@ object OrderSources extends ActorSerializerSuport {
       appInfo: AppSources.AppInfo
   ) extends Event
 
+  case class OrderCallback(order: OrderModel.DbInfo) extends Event
+
+  case class OrderCallbackOk(request: OrderCallback, response: Option[String])
+      extends Event
+
+  case class OrderCallbackFail(request: OrderCallback, error: String)
+      extends Event
+
   implicit class FlowLog(data: Flow[BaseSerializer, BaseSerializer, NotUsed])
-    extends JsonParse {
+      extends JsonParse {
     def log(): Flow[BaseSerializer, BaseSerializer, NotUsed] = {
       data
         .logWithMarker(
@@ -80,12 +88,12 @@ object OrderSources extends ActorSerializerSuport {
     }
   }
 
-
   def createCoreFlow(
       system: ActorSystem[_]
   ): Flow[BaseSerializer, BaseSerializer, NotUsed] = {
     implicit val ec = system.executionContext
     val orderService = ServiceSingleton.get(classOf[OrderService])
+    val userService = ServiceSingleton.get(classOf[UserService])
     Flow[BaseSerializer]
       .collectType[Event]
       .log()
@@ -119,6 +127,12 @@ object OrderSources extends ActorSerializerSuport {
           case UpdateOrderToUserOk(request) => {
             Nil
           }
+          case OrderCallbackOk(_, _) => {
+            Nil
+          }
+          case OrderCallbackFail(_, _) => {
+            Nil
+          }
           case UpdateOrderToUserFail(request, error) => {
             if (request.repeat < 3) {
               request.copy(repeat = request.repeat + 1) :: Nil
@@ -140,6 +154,10 @@ object OrderSources extends ActorSerializerSuport {
             Nil
           }
           case PaySuccess(request) => {
+            val order = request.order.copy(
+              status = PayStatus.payed,
+              margin = BigDecimal("0")
+            )
             UpdateOrderToUser(
               request.order.copy(
                 status = PayStatus.payed,
@@ -148,7 +166,7 @@ object OrderSources extends ActorSerializerSuport {
               margin = request.order.margin,
               paySuccess = true,
               repeat = 0
-            ) :: Nil
+            ) :: OrderCallback(order) :: Nil
           }
           case PayError(request, error) => {
             val order = if (request.order.payCount >= 3) {
@@ -162,14 +180,15 @@ object OrderSources extends ActorSerializerSuport {
             }
             if (order.status == PayStatus.payerr) {
               orders = orders.filterNot(_.orderId == order.orderId)
+              val orderTmp = order.copy(
+                margin = BigDecimal("0")
+              )
               UpdateOrderToUser(
-                order.copy(
-                  margin = BigDecimal("0")
-                ),
+                orderTmp,
                 margin = order.margin,
                 paySuccess = false,
                 repeat = 0
-              ) :: Nil
+              ) :: OrderCallback(orderTmp) :: Nil
             } else {
               orders = orders ++ Set(
                 order
@@ -204,6 +223,36 @@ object OrderSources extends ActorSerializerSuport {
       }
       .log()
       .mapAsync(1) {
+        case request @ OrderCallback(order) => {
+          userService
+            .info(order.apiKey)
+            .flatMap {
+              case Some(userInfo) => {
+                userInfo.callback match {
+                  case Some(url) =>
+                    orderService
+                      .callback(
+                        order,
+                        order.status,
+                        url,
+                        userInfo.apiSecret,
+                        None
+                      )
+                      .map(result => OrderCallbackOk(request, Option(result)))
+                      .recover {
+                        case ee =>
+                          OrderCallbackFail(request, ee.getMessage)
+                      }
+                  case None =>
+                    Future.successful(
+                      OrderCallbackFail(request, "url not config")
+                    )
+                }
+              }
+              case None =>
+                Future.successful(OrderCallbackFail(request, "apiKey not exit"))
+            }
+        }
         case request @ QueryOrder(repeat, pub) => {
           orderService
             .all(PayStatus.normal)

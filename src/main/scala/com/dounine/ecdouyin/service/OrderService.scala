@@ -247,6 +247,9 @@ class OrderService(system: ActorSystem[_]) extends EnumMappers {
                 ),
                 settings = ConnectSettings.httpSettings(system)
               )
+              .recover {
+                case e => Future.failed(new Exception(e.getMessage))
+              }
               .flatMap {
                 case HttpResponse(_, _, entity, _) =>
                   entity.dataBytes
