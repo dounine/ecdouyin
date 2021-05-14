@@ -7,12 +7,12 @@ import com.dounine.ecdouyin.behaviors.engine.{AppSources, CoreEngine}
 import com.dounine.ecdouyin.model.models.BaseSerializer
 import com.dounine.ecdouyin.model.types.service.AppPage.AppPage
 import com.dounine.ecdouyin.model.types.service.PayPlatform.PayPlatform
-import com.dounine.ecdouyin.tools.json.JsonParse
+import com.dounine.ecdouyin.tools.json.{ActorSerializerSuport, JsonParse}
 import org.slf4j.LoggerFactory
 
 import scala.concurrent.duration.FiniteDuration
 
-object AppClient extends JsonParse {
+object AppClient extends ActorSerializerSuport {
 
   sealed trait Command extends BaseSerializer
 

@@ -7,12 +7,12 @@ import akka.stream.scaladsl.{DelayStrategy, Flow}
 import akka.stream.{Attributes, DelayOverflowStrategy}
 import com.dounine.ecdouyin.behaviors.engine.socket.AppClient
 import com.dounine.ecdouyin.model.models.BaseSerializer
-import com.dounine.ecdouyin.tools.json.JsonParse
+import com.dounine.ecdouyin.tools.json.{ActorSerializerSuport, JsonParse}
 import org.slf4j.LoggerFactory
 
 import scala.concurrent.duration._
 
-object AppSources extends JsonParse {
+object AppSources extends ActorSerializerSuport {
 
   private val logger = LoggerFactory.getLogger(AppSources.getClass)
   case class AppInfo(

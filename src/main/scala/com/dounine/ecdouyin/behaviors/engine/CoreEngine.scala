@@ -5,25 +5,16 @@ import akka.actor.typed.{ActorRef, Behavior}
 import akka.cluster.sharding.typed.scaladsl.EntityTypeKey
 import akka.persistence.typed.PersistenceId
 import akka.stream._
-import akka.stream.scaladsl.{
-  Broadcast,
-  Flow,
-  GraphDSL,
-  Keep,
-  Merge,
-  RunnableGraph,
-  Source,
-  SourceQueueWithComplete
-}
+import akka.stream.scaladsl.{Broadcast, Flow, GraphDSL, Keep, Merge, RunnableGraph, Source, SourceQueueWithComplete}
 import akka.{Done, NotUsed}
 import com.dounine.ecdouyin.model.models.{BaseSerializer, OrderModel}
-import com.dounine.ecdouyin.tools.json.JsonParse
+import com.dounine.ecdouyin.tools.json.{ActorSerializerSuport, JsonParse}
 import org.slf4j.LoggerFactory
 
 import scala.concurrent.Promise
 import scala.util.{Failure, Success}
 
-object CoreEngine extends JsonParse {
+object CoreEngine extends ActorSerializerSuport {
 
   private val logger = LoggerFactory.getLogger(CoreEngine.getClass)
 

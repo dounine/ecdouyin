@@ -7,13 +7,13 @@ import akka.stream.scaladsl.{DelayStrategy, Flow, Source}
 import akka.stream.{Attributes, DelayOverflowStrategy}
 import com.dounine.ecdouyin.model.models.{BaseSerializer, OrderModel}
 import com.dounine.ecdouyin.tools.akka.chrome.{Chrome, ChromePools}
-import com.dounine.ecdouyin.tools.json.JsonParse
+import com.dounine.ecdouyin.tools.json.{ActorSerializerSuport, JsonParse}
 import org.openqa.selenium.{By, OutputType}
 import org.slf4j.LoggerFactory
 
 import scala.concurrent.Future
 
-object QrcodeSources {
+object QrcodeSources extends ActorSerializerSuport {
 
   private val logger = LoggerFactory.getLogger(QrcodeSources.getClass)
   case class AppInfo(
@@ -357,8 +357,8 @@ object QrcodeSources {
             }
         }
       }
-      .recover{
-        case e:Throwable => Left(e)
+      .recover {
+        case e: Throwable => Left(e)
       }
   }
 
