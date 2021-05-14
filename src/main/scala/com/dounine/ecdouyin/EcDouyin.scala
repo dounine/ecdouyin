@@ -72,10 +72,10 @@ object EcDouyin {
     startup.start()
     new Shutdowns(system).listener()
     val routers = Array(
-      new HealthRouter(system).route,
+//      new HealthRouter(system).route,
       new WebsocketRouter(system).route,
-      new FileRouter(system).route,
-      new OrderRouter(system).route
+//      new FileRouter(system).route,
+//      new OrderRouter(system).route
     )
 
     Http(system)

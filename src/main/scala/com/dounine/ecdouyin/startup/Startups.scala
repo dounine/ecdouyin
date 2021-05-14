@@ -140,7 +140,7 @@ class Startups(system: ActorSystem[_]) {
       )
       .ask(
         CoreEngine.Message(
-          OrderSources.QueryOrder(0)
+          OrderSources.QueryOrderInit()
         )
       )(3.seconds)
   }

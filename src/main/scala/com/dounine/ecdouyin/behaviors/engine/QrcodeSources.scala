@@ -2,13 +2,16 @@ package com.dounine.ecdouyin.behaviors.engine
 
 import akka.NotUsed
 import akka.actor.typed.{ActorRef, ActorSystem}
+import akka.event.LogMarker
 import akka.stream.{Attributes, DelayOverflowStrategy}
 import akka.stream.scaladsl.{DelayStrategy, Flow, Source}
 import com.dounine.ecdouyin.model.models.{BaseSerializer, OrderModel}
 import com.dounine.ecdouyin.tools.akka.chrome.{Chrome, ChromePools}
+import com.dounine.ecdouyin.tools.json.JsonParse
 import org.openqa.selenium.{By, OutputType}
 import org.slf4j.LoggerFactory
 
+import java.io.File
 import java.time.LocalDateTime
 import scala.concurrent.Future
 
@@ -31,71 +34,92 @@ object QrcodeSources {
     }
   }
 
-  case class Online(
-      app: AppInfo
-  ) extends BaseSerializer
+  sealed trait Event extends BaseSerializer
 
-  case class Offline(appId: String) extends BaseSerializer
+  case class CreateOrderPush(
+      request: OrderSources.AppWorkPush,
+      order: OrderModel.DbInfo
+  ) extends Event
 
-  case class Idle(
-      app: AppInfo
-  ) extends BaseSerializer
-
-  case class Working(
-      app: AppInfo
-  ) extends BaseSerializer
+  implicit class FlowLog(data: Flow[BaseSerializer, BaseSerializer, NotUsed])
+      extends JsonParse {
+    def log(): Flow[BaseSerializer, BaseSerializer, NotUsed] = {
+      data
+        .logWithMarker(
+          s"qrcodeMarker",
+          (e: BaseSerializer) =>
+            LogMarker(
+              name = s"qrcodeMarker"
+            ),
+          (e: BaseSerializer) => e.logJson
+        )
+        .withAttributes(
+          Attributes.logLevels(
+            onElement = Attributes.LogLevels.Info
+          )
+        )
+    }
+  }
 
   def createCoreFlow(
       system: ActorSystem[_]
   ): Flow[BaseSerializer, BaseSerializer, NotUsed] = {
     implicit val ec = system.executionContext
     Flow[BaseSerializer]
-      .flatMapConcat {
-        case r @ OrderSources.CreateOrderPush(request, order) => {
-          createQrcodeSource(
-            system,
-            order
-          ).flatMapConcat {
-            case Left(error) => {
-              Source(
-                OrderSources.PayError(r, error.getMessage) :: AppSources
-                  .Idle(request.appInfo) :: Nil
-              )
-            }
-            case Right((chrome, order, qrcode)) =>
-              Source
-                .single(
-                  AppSources.PayPush(
-                    r,
-                    qrcode
+      .collectType[Event]
+      .log()
+      .flatMapMerge(
+        10,
+        {
+          case r @ CreateOrderPush(request, order) => {
+            createQrcodeSource(
+              system,
+              order
+            ).flatMapMerge(
+              10,
+              {
+                case Left(error) => {
+                  Source(
+                    OrderSources.PayError(r, error.getMessage) :: AppSources
+                      .Idle(request.appInfo) :: Nil
                   )
-                )
-                .concat(
-                  createListenPay(
-                    system,
-                    chrome,
-                    order
-                  ).flatMapConcat {
-                    case Left(error) =>
-                      Source(
-                        OrderSources.PayError(
-                          request = r,
-                          error = error.getMessage
-                        ) :: AppSources.Idle(request.appInfo)
-                          :: Nil
+                }
+                case Right((chrome, order, qrcode)) =>
+                  Source
+                    .single(
+                      AppSources.PayPush(
+                        r,
+                        qrcode
                       )
-                    case Right(value) =>
-                      Source(
-                        OrderSources.PaySuccess(
-                          request = r
-                        ) :: AppSources.Idle(request.appInfo) :: Nil
-                      )
-                  }
-                )
+                    )
+                    .concat(
+                      createListenPay(
+                        system,
+                        chrome,
+                        order
+                      ).flatMapConcat {
+                        case Left(error) =>
+                          Source(
+                            OrderSources.PayError(
+                              request = r,
+                              error = error.getMessage
+                            ) :: AppSources.Idle(request.appInfo)
+                              :: Nil
+                          )
+                        case Right(value) =>
+                          Source(
+                            OrderSources.PaySuccess(
+                              request = r
+                            ) :: AppSources.Idle(request.appInfo) :: Nil
+                          )
+                      }
+                    )
+              }
+            )
           }
+          case ee => Source.single(ee)
         }
-        case ee => Source.single(ee)
-      }
+      )
   }
 
   /**
@@ -139,7 +163,10 @@ object QrcodeSources {
     import scala.util.chaining._
     createChromeSource(system)
       .map {
-        case Left(value)  => throw value
+        case Left(value) => {
+          value.printStackTrace()
+          throw value
+        }
         case Right(value) => value
       }
       .flatMapConcat { source =>
@@ -210,8 +237,7 @@ object QrcodeSources {
                       increaseStep = 200.milliseconds,
                       needsIncrease = _ => true
                     ),
-                  overFlowStrategy =
-                    DelayOverflowStrategy.backpressure
+                  overFlowStrategy = DelayOverflowStrategy.backpressure
                 )
                 .mapAsync(1) { _ =>
                   Future {
@@ -286,8 +312,7 @@ object QrcodeSources {
                           increaseStep = 200.milliseconds,
                           needsIncrease = _ => true
                         ),
-                      overFlowStrategy =
-                        DelayOverflowStrategy.backpressure
+                      overFlowStrategy = DelayOverflowStrategy.backpressure
                     )
                     .mapAsync(1) { _ =>
                       Future {
@@ -334,6 +359,9 @@ object QrcodeSources {
             }
         }
       }
+      .recover{
+        case e:Throwable => Left(e)
+      }
   }
 
   /**
@@ -352,7 +380,7 @@ object QrcodeSources {
     import scala.concurrent.duration._
     Source(1 to 60)
       .throttle(1, 1.seconds)
-      .map(_ => {
+      .map(list => {
         chrome.driver().getCurrentUrl
       })
       .filter(_.contains("result?app_id"))

@@ -2,9 +2,11 @@ package com.dounine.ecdouyin.behaviors.engine
 
 import akka.NotUsed
 import akka.actor.typed.{ActorRef, ActorSystem}
+import akka.event.LogMarker
 import akka.stream.{Attributes, DelayOverflowStrategy}
 import akka.stream.scaladsl.{DelayStrategy, Flow, Source}
 import com.dounine.ecdouyin.behaviors.engine.socket.AppClient
+import com.dounine.ecdouyin.behaviors.engine.socket.AppClient.Command
 import com.dounine.ecdouyin.model.models.BaseSerializer
 import com.dounine.ecdouyin.tools.json.JsonParse
 import org.slf4j.LoggerFactory
@@ -30,46 +32,70 @@ object AppSources extends JsonParse {
     }
   }
 
+  sealed trait Event extends BaseSerializer
+
   case class Online(
       appInfo: AppInfo
-  ) extends BaseSerializer
+  ) extends Event
 
-  case class Offline(appId: String) extends BaseSerializer
+  case class Offline(appId: String) extends Event
 
   case class Idle(
       appInfo: AppInfo
-  ) extends BaseSerializer
+  ) extends Event
 
   /**
     * 推送支付消息给手机
     */
   case class PayPush(
-      request: OrderSources.CreateOrderPush,
+      request: QrcodeSources.CreateOrderPush,
       qrcode: String
-  ) extends BaseSerializer
+  ) extends Event
 
-  case class AppWorkPush(
-      appInfo: AppSources.AppInfo
-  ) extends BaseSerializer
+  implicit class FlowLog(data: Flow[BaseSerializer, BaseSerializer, NotUsed])
+      extends JsonParse {
+    def log(): Flow[BaseSerializer, BaseSerializer, NotUsed] = {
+      data
+        .logWithMarker(
+          s"appMarker",
+          (e: BaseSerializer) =>
+            LogMarker(
+              name = s"appMarker"
+            ),
+          (e: BaseSerializer) => e.logJson
+        )
+        .withAttributes(
+          Attributes.logLevels(
+            onElement = Attributes.LogLevels.Info
+          )
+        )
+
+    }
+  }
 
   def createCoreFlow(
       system: ActorSystem[_]
   ): Flow[BaseSerializer, BaseSerializer, NotUsed] = {
     val domain = system.settings.config.getString("app.file.domain")
+
     Flow[BaseSerializer]
+      .collectType[Event]
       .delayWith(
         delayStrategySupplier = () =>
           DelayStrategy.linearIncreasingDelay(
-            increaseStep = 500.seconds,
+            increaseStep = 1.seconds,
             needsIncrease = {
               case Idle(_) => true
               case _       => false
-            }
+            },
+            maxDelay = 3.seconds
           ),
         DelayOverflowStrategy.backpressure
       )
+      .log()
       .statefulMapConcat { () =>
-        var apps = Set[AppInfo]()
+        var online = Set[AppInfo]()
+        var offline = Set[String]()
 
         {
           case PayPush(request, qrcode) => {
@@ -87,22 +113,25 @@ object AppSources extends JsonParse {
             Nil
           }
           case Online(appInfo) => {
-            apps = apps ++ Set(appInfo)
-            AppWorkPush(appInfo) :: Nil
+            online = online ++ Set(appInfo)
+            OrderSources.AppWorkPush(appInfo) :: Nil
           }
           case Offline(appId) => {
-            apps = apps.filterNot(_.appId == appId)
+            offline = offline ++ Set(appId)
+            online = online.filterNot(_.appId == appId)
             Nil
           }
           case Idle(appInfo) => {
-            apps = apps ++ Set(appInfo)
-            AppWorkPush(
-              apps.maxBy(_.balance)
-            ) :: Nil
+            if (offline.contains(appInfo.appId)) {
+              offline = offline.filterNot(_ == appInfo.appId)
+              Nil
+            } else {
+              OrderSources.AppWorkPush(
+                appInfo
+              ) :: Nil
+            }
           }
-          case ee @ _ => {
-            ee :: Nil
-          }
+          case ee @ _ => ee :: Nil
         }
       }
   }

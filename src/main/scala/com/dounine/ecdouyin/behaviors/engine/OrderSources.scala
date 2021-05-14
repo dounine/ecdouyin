@@ -2,56 +2,85 @@ package com.dounine.ecdouyin.behaviors.engine
 
 import akka.NotUsed
 import akka.actor.typed.ActorSystem
+import akka.event.LogMarker
 import akka.stream.Attributes
 import akka.stream.scaladsl.Flow
 import com.dounine.ecdouyin.model.models.{BaseSerializer, OrderModel, UserModel}
 import com.dounine.ecdouyin.model.types.service.PayStatus
 import com.dounine.ecdouyin.service.{OrderService, UserService}
+import com.dounine.ecdouyin.tools.json.JsonParse
 import com.dounine.ecdouyin.tools.util.ServiceSingleton
 import org.slf4j.LoggerFactory
 
 import java.time.LocalDateTime
 import scala.concurrent.Future
 
-object OrderSources {
+object OrderSources extends JsonParse {
 
   private val logger = LoggerFactory.getLogger(OrderSources.getClass)
-  case class Create(order: OrderModel.DbInfo) extends BaseSerializer
 
-  case class Cancel(orderId: Long) extends BaseSerializer
+  sealed trait Event extends BaseSerializer
 
-  case class CreateOrderPush(
-      request: AppSources.AppWorkPush,
-      order: OrderModel.DbInfo
-  ) extends BaseSerializer
+  case class Create(order: OrderModel.DbInfo) extends Event
 
-  case class PayError(request: CreateOrderPush, error: String)
-      extends BaseSerializer
+  case class Cancel(orderId: Long) extends Event
 
-  case class QueryOrder(repeat: Int) extends BaseSerializer
+  case class PayError(request: QrcodeSources.CreateOrderPush, error: String)
+      extends Event
 
-  case class QueryOrderOk(request: QueryOrder, orders: Seq[OrderModel.DbInfo])
-      extends BaseSerializer
+  case class QueryOrderInit() extends Event
 
-  case class QueryOrderFail(request: QueryOrder, error: String)
-      extends BaseSerializer
+  private case class QueryOrder(repeat: Int, pub: Boolean) extends Event
 
-  case class UpdateOrderToUser(
+  private case class QueryOrderOk(
+      request: QueryOrder,
+      orders: Seq[OrderModel.DbInfo]
+  ) extends Event
+
+  private case class QueryOrderFail(request: QueryOrder, error: String)
+      extends Event
+
+  private case class UpdateOrderToUser(
       order: OrderModel.DbInfo,
       margin: BigDecimal,
       paySuccess: Boolean,
       repeat: Int
-  ) extends BaseSerializer
+  ) extends Event
 
-  case class UpdateOrderToUserOk(request: UpdateOrderToUser)
-      extends BaseSerializer
+  private case class UpdateOrderToUserOk(request: UpdateOrderToUser)
+      extends Event
 
-  case class UpdateOrderToUserFail(
+  private case class UpdateOrderToUserFail(
       request: UpdateOrderToUser,
       error: String
-  ) extends BaseSerializer
+  ) extends Event
 
-  case class PaySuccess(request: CreateOrderPush) extends BaseSerializer
+  case class PaySuccess(request: QrcodeSources.CreateOrderPush) extends Event
+
+  case class AppWorkPush(
+      appInfo: AppSources.AppInfo
+  ) extends Event
+
+  implicit class FlowLog(data: Flow[BaseSerializer, BaseSerializer, NotUsed])
+    extends JsonParse {
+    def log(): Flow[BaseSerializer, BaseSerializer, NotUsed] = {
+      data
+        .logWithMarker(
+          s"orderMarker",
+          (e: BaseSerializer) =>
+            LogMarker(
+              name = s"orderMarker"
+            ),
+          (e: BaseSerializer) => e.logJson
+        )
+        .withAttributes(
+          Attributes.logLevels(
+            onElement = Attributes.LogLevels.Info
+          )
+        )
+    }
+  }
+
 
   def createCoreFlow(
       system: ActorSystem[_]
@@ -59,18 +88,23 @@ object OrderSources {
     implicit val ec = system.executionContext
     val orderService = ServiceSingleton.get(classOf[OrderService])
     Flow[BaseSerializer]
+      .collectType[Event]
+      .log()
       .statefulMapConcat { () =>
         var orders = Set[OrderModel.DbInfo]()
         var query = false
 
         {
-          case QueryOrder(repeat) => {
+          case QueryOrderInit() => {
+            QueryOrder(repeat = 0, pub = true) :: Nil
+          }
+          case QueryOrder(repeat, pub) => {
             if (!query) {
               query = true
-              QueryOrder(0) :: Nil
+              QueryOrder(repeat = 0, pub = false) :: Nil
             } else {
-              if (repeat > 0 && repeat < 3) {
-                QueryOrder(repeat + 1) :: Nil
+              if (repeat > 0 && repeat < 3 && !pub) {
+                QueryOrder(repeat = repeat + 1, pub = false) :: Nil
               } else Nil
             }
           }
@@ -91,11 +125,11 @@ object OrderSources {
               request.copy(repeat = request.repeat + 1) :: Nil
             } else Nil
           }
-          case request @ AppSources.AppWorkPush(appInfo) => {
+          case request @ AppWorkPush(appInfo) => {
             if (orders.nonEmpty) {
               val earlierOrder = orders.minBy(_.createTime)
               orders = orders.filterNot(_.orderId == earlierOrder.orderId)
-              CreateOrderPush(request, earlierOrder) :: Nil
+              QrcodeSources.CreateOrderPush(request, earlierOrder) :: Nil
             } else {
               AppSources.Idle(
                 appInfo = appInfo
@@ -128,6 +162,7 @@ object OrderSources {
               )
             }
             if (order.status == PayStatus.payerr) {
+              orders = orders.filterNot(_.orderId == order.orderId)
               UpdateOrderToUser(
                 order.copy(
                   margin = BigDecimal("0")
@@ -168,11 +203,14 @@ object OrderSources {
           case ee @ _ => ee :: Nil
         }
       }
+      .log()
       .mapAsync(1) {
-        case request @ QueryOrder(repeat) => {
+        case request @ QueryOrder(repeat, pub) => {
           orderService
             .all(PayStatus.normal)
-            .map(orders => QueryOrderOk(request = request, orders = orders))
+            .map(orders => {
+              QueryOrderOk(request = request, orders = orders)
+            })
             .recover {
               case e => QueryOrderFail(request, e.getMessage)
             }
@@ -198,7 +236,9 @@ object OrderSources {
               case ee => UpdateOrderToUserFail(request, ee.getMessage)
             }
         }
-        case ee @ _ => Future.successful(ee)
+        case ee @ _ => {
+          Future.successful(ee)
+        }
       }
 
   }

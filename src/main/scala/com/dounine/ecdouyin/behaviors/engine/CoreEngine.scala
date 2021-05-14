@@ -1,12 +1,23 @@
 package com.dounine.ecdouyin.behaviors.engine
 
-import akka.{Done, NotUsed}
+import akka.{Done, NotUsed, actor}
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
 import akka.cluster.sharding.typed.scaladsl.EntityTypeKey
 import akka.event.LogMarker
 import akka.persistence.typed.PersistenceId
-import akka.stream.scaladsl.{Keep, Source, SourceQueueWithComplete}
+import akka.stream.scaladsl.{
+  Broadcast,
+  Flow,
+  GraphDSL,
+  Keep,
+  Merge,
+  MergePreferred,
+  RunnableGraph,
+  Sink,
+  Source,
+  SourceQueueWithComplete
+}
 import akka.stream._
 import com.dounine.ecdouyin.model.models.{BaseSerializer, OrderModel}
 import com.dounine.ecdouyin.tools.json.JsonParse
@@ -51,83 +62,63 @@ object CoreEngine extends JsonParse {
 
   case class Shutdown()(val replyTo: ActorRef[Done]) extends BaseSerializer
 
+  case object ShutdownStream extends BaseSerializer
+
   def apply(
       entityId: PersistenceId
   ): Behavior[BaseSerializer] =
     Behaviors.setup[BaseSerializer] { context: ActorContext[BaseSerializer] =>
       {
-        implicit val materializer = Materializer(context)
+        val appFlow: Flow[BaseSerializer, BaseSerializer, NotUsed] =
+          AppSources.createCoreFlow(context.system)
+        val orderFlow: Flow[BaseSerializer, BaseSerializer, NotUsed] =
+          OrderSources.createCoreFlow(context.system)
+        val qrcodeFlow: Flow[BaseSerializer, BaseSerializer, NotUsed] =
+          QrcodeSources.createCoreFlow(context.system)
+
+        implicit val materializer: Materializer = Materializer(context)
+
         val (
-//          (
-          queue: SourceQueueWithComplete[BaseSerializer],
-//            shutdown: Promise[Option[Nothing]]
-//          ),
+          (
+            queue: SourceQueueWithComplete[BaseSerializer],
+            shutdown: Promise[Option[BaseSerializer]]
+          ),
           source: Source[BaseSerializer, NotUsed]
         ) = Source
-          .queue[BaseSerializer](
-            100,
-            OverflowStrategy.backpressure
-          )
-          .withAttributes(
-            Attributes.logLevels(
-              onElement = Attributes.LogLevels.Info
-            )
-          )
-          //          .concatMat(Source.maybe)(Keep.both)
+          .queue[BaseSerializer](1000, OverflowStrategy.backpressure)
+          .concatMat(Source.maybe[BaseSerializer])(Keep.both)
           .preMaterialize()
 
-        val appFlow = AppSources.createCoreFlow(context.system)
-        val orderFlow = OrderSources.createCoreFlow(context.system)
-        val qrcodeFlow = QrcodeSources.createCoreFlow(context.system)
+        RunnableGraph
+          .fromGraph(GraphDSL.create(source) {
+            implicit builder: GraphDSL.Builder[NotUsed] =>
+              (request: SourceShape[BaseSerializer]) =>
+                {
+                  import GraphDSL.Implicits._
+                  val broadcast
+                      : UniformFanOutShape[BaseSerializer, BaseSerializer] =
+                    builder.add(Broadcast[BaseSerializer](3))
+                  val merge =
+                    builder.add(Merge[BaseSerializer](4))
 
-        source
-          .logWithMarker(
-            "payMarker",
-            (e: BaseSerializer) =>
-              LogMarker(
-                name = "payMarker"
-              ),
-            (e: BaseSerializer) => e.logJson
-          )
-          .withAttributes(
-            Attributes.logLevels(
-              onElement = Attributes.LogLevels.Info
-            )
-          )
-          .via(appFlow)
-          .via(orderFlow)
-          .via(qrcodeFlow)
-          .mapAsync(1) { message: BaseSerializer =>
-            {
-              queue
-                .offer(message)
-                .map {
-                  case result: QueueCompletionResult => {
-                    logger.error("流完成了 -> {}", message.logJson)
-                    Right(message, "流完成了")
-                  }
-                  case QueueOfferResult.Enqueued => {
-                    Left("success")
-                  }
-                  case QueueOfferResult.Dropped => {
-                    logger.error("丢弃消息 -> {}", message.logJson)
-                    Right(message, "丢弃消息")
-                  }
-                }(context.executionContext)
-            }
-          }
-          .filter(_.isRight)
-          .recover {
-            case e: Throwable => {
-              e.printStackTrace()
-              throw e
-            }
-          }
-          .runForeach(i => {
-            i.foreach(value => {
-              logger.error(value.logJson)
-            })
+                  //                                              ┌───────┐
+                  //                                    ┌────────▶□  app  □──────┐
+                  //                                    │         └───────┘      │
+                  //┌─────────┐   ┌─────────┐     ┌─────□─────┐   ┌───────┐      │
+                  //│ request □─┐ │  merge  □  ─▶ □ broadcast │──▶□ order □──────┤
+                  //└─────────┘ │ └──□─□─□─□┘     └─────□─────┘   └───────┘      │
+                  //            │    ▲ ▲ ▲ ▲            │         ┌───────┐      │
+                  //            │    │ │ │ │            └────────▶□qrcode □──────┤
+                  //            │    │ │ │ │                      └───────┘      │
+                  //            └────┘ └─┴─┴─────────────────────────────────────┘
+                  request ~> merge ~> broadcast ~> appFlow ~> merge.in(1)
+                  broadcast ~> qrcodeFlow ~> merge.in(2)
+                  broadcast ~> orderFlow ~> merge.in(3)
+
+                  ClosedShape
+                }
           })
+          .run()
 
         Behaviors.receiveMessage {
           case e @ Init() => {
@@ -201,7 +192,7 @@ object CoreEngine extends JsonParse {
             Behaviors.same
           }
           case request @ Shutdown() => {
-//            shutdown.success(None)
+            shutdown.trySuccess(Option(ShutdownStream))
             request.replyTo.tell(Done)
             Behaviors.same
           }

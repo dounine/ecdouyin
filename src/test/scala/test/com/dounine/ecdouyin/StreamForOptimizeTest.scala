@@ -10,15 +10,34 @@ import akka.actor.typed.scaladsl.Behaviors
 import akka.event.LogMarker
 import akka.stream.{
   Attributes,
+  ClosedShape,
   Materializer,
   OverflowStrategy,
   RestartSettings,
+  SourceShape,
   SystemMaterializer
 }
-import akka.stream.scaladsl.{RestartSource, Sink, Source}
+import akka.stream.scaladsl.{
+  Broadcast,
+  Concat,
+  Flow,
+  GraphDSL,
+  Keep,
+  Merge,
+  RestartSource,
+  RunnableGraph,
+  Sink,
+  Source,
+  SourceQueueWithComplete,
+  Unzip,
+  Zip,
+  ZipWith
+}
 import akka.stream.testkit.scaladsl.TestSink
 import akka.stream.typed.scaladsl.ActorSource
+import com.dounine.ecdouyin.model.models.BaseSerializer
 import com.dounine.ecdouyin.store.EnumMappers
+import com.dounine.ecdouyin.tools.json.JsonParse
 import com.typesafe.config.ConfigFactory
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpecLike
@@ -26,7 +45,7 @@ import org.scalatestplus.mockito.MockitoSugar
 
 import java.time.LocalDateTime
 import java.util.concurrent.TimeUnit
-import scala.concurrent.Future
+import scala.concurrent.{Future, Promise}
 import scala.concurrent.duration._
 import scala.util.{Failure, Success}
 
@@ -64,6 +83,38 @@ case class HelloSet(name: String, age: Int) {
     }
   }
 }
+sealed trait StreamEvent
+sealed trait AppEvent extends StreamEvent
+case class AppOnline() extends AppEvent
+case class AppOffline() extends AppEvent
+sealed trait OrderEvent extends StreamEvent
+case class OrderInit() extends OrderEvent
+case class OrderRequest() extends OrderEvent
+case class OrderRequestOk() extends OrderEvent
+
+object FlowLog {
+  implicit class FlowLog(data: Flow[StreamEvent, StreamEvent, NotUsed])
+      extends JsonParse {
+    def log(name: String): Flow[StreamEvent, StreamEvent, NotUsed] = {
+      data
+        .logWithMarker(
+          s" ******************* ",
+          (e: StreamEvent) =>
+            LogMarker(
+              name = s"${name}Marker"
+            ),
+          (e: StreamEvent) => e.logJson
+        )
+        .withAttributes(
+          Attributes.logLevels(
+            onElement = Attributes.LogLevels.Error
+          )
+        )
+
+    }
+  }
+}
+
 class StreamForOptimizeTest
     extends ScalaTestWithActorTestKit(
       ConfigFactory
@@ -90,6 +141,172 @@ class StreamForOptimizeTest
   implicit val ec = system.executionContext
 
   "stream optimize" should {
+
+    "source concat" in {
+      val a = Source(1 to 3)
+      val b = Source(7 to 9)
+        .throttle(1, 10.seconds)
+
+      a.merge(b).runForeach(i => { info(i.toString) })
+      TimeUnit.SECONDS.sleep(4)
+    }
+
+    "graph dsl" ignore {
+
+      import FlowLog.FlowLog
+
+      val flowApp = Flow[StreamEvent]
+        .collectType[AppEvent]
+        .statefulMapConcat { () =>
+          {
+            case AppOnline()  => Nil
+            case AppOffline() => Nil
+          }
+        }
+
+      val flowOrder = Flow[StreamEvent]
+        .collectType[OrderEvent]
+        .log("order")
+        .statefulMapConcat { () =>
+          {
+            case OrderInit() => {
+              OrderRequest() :: Nil
+            }
+            case OrderRequestOk() => Nil
+            case OrderRequest() => {
+              println("error")
+              Nil
+            }
+          }
+        }
+        .log("order")
+        .mapAsync(1) {
+          case OrderRequest() => Future.successful(OrderRequestOk())
+          case ee             => Future.successful(ee)
+        }
+
+      val (
+        queue: SourceQueueWithComplete[StreamEvent],
+        source: Source[StreamEvent, NotUsed]
+      ) = Source
+        .queue[StreamEvent](8, OverflowStrategy.backpressure)
+        .preMaterialize()
+      val graph = RunnableGraph.fromGraph(GraphDSL.create(source) {
+        implicit builder: GraphDSL.Builder[NotUsed] =>
+          (request: SourceShape[StreamEvent]) =>
+            {
+              import GraphDSL.Implicits._
+
+              val broadcast = builder.add(Broadcast[StreamEvent](2))
+              val merge = builder.add(Merge[StreamEvent](3))
+              //                                         ┌───────┐
+              //                               ┌────────▶□  app  □──┐
+              //                               │         └───────┘  │
+              //         ┌─────────┐     ┌─────□─────┐              │
+              //         │  merge  □  ─▶ □ broadcast │              │
+              //         └──□─□─□──┘     └─────□─────┘              │
+              //            ▲ ▲ ▲              │         ┌───────┐  │
+              //            │ │ │              └────────▶□ order │  │
+              //┌─────────┐ │ │ │                        └───□───┘  │
+              //│ request □─┘ │ └────────────────────────────┘      │
+              //└─────────┘   └─────────────────────────────────────┘
+
+              request ~> merge ~> broadcast ~> flowApp ~> merge.in(1)
+              broadcast ~> flowOrder ~> merge.in(2)
+
+              ClosedShape
+            }
+
+      })
+      graph.run()
+      queue.offer(OrderInit())
+      TimeUnit.SECONDS.sleep(1)
+    }
+
+    "stream split" ignore {
+      Source(1 to 3)
+        .splitWhen(_ => true)
+        .map(i => {
+          println("流1 -> " + i)
+          i
+        })
+        .mergeSubstreams
+        .runForeach(i => {
+          info(i.toString)
+        })
+      TimeUnit.SECONDS.sleep(1)
+    }
+
+    "test staful" ignore {
+      val (
+        (
+          queue: SourceQueueWithComplete[String],
+          shutdown: Promise[Option[Nothing]]
+        ),
+        source: Source[String, NotUsed]
+      ) =
+        Source
+          .queue[String](
+            bufferSize = 8,
+            overflowStrategy = OverflowStrategy.backpressure
+          )
+          .concatMat(Source.maybe)(Keep.both)
+          .preMaterialize()
+
+      queue.offer("init")
+
+      source
+        .logWithMarker(
+          " **************** ",
+          (e: String) =>
+            LogMarker(
+              name = "marker"
+            ),
+          (e: String) => e
+        )
+        .addAttributes(
+          Attributes.logLevels(
+            onElement = Attributes.LogLevels.Error
+          )
+        )
+        .via(
+          Flow[String]
+            .flatMapConcat {
+              case "query" => Source.single("queryOk")
+              case ee      => Source.single(ee)
+            }
+            .statefulMapConcat { () =>
+              {
+                case "init" => "query" :: Nil
+//                case "query"     => "queryOk" :: Nil
+                case "queryOk"   => Nil
+                case "queryFail" => Nil
+                case "ignore"    => Nil
+                case ee          => ee :: Nil
+              }
+            }
+
+          //            .mapAsync(1) {
+          //              case "query" => Future.successful("queryOk")
+          //              case ee      => Future.successful(ee)
+          //            }
+          //            .flatMapConcat{
+//              case "2" => Source.single("4")
+//              case ee => Source.single(ee)
+//            }
+        )
+        .runForeach(result => {
+          println("---------- >" + result)
+          queue.offer(result)
+//          if (result == "3") {
+//            shutdown.success(None)
+//          }
+        })
+//        .futureValue shouldBe Done
+
+      TimeUnit.SECONDS.sleep(1)
+      shutdown.trySuccess(None)
+    }
 
     "set case class equals" ignore {
       val list = Set(HelloSet("a", 1), HelloSet("b", 2), HelloSet("a", 2))

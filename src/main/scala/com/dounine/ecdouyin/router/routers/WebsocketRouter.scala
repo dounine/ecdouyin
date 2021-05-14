@@ -13,6 +13,7 @@ import com.dounine.ecdouyin.model.models.BaseSerializer
 import org.json4s.native.Serialization.write
 import org.slf4j.{Logger, LoggerFactory}
 
+import java.util.UUID
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContextExecutor, Future}
 
@@ -42,9 +43,15 @@ class WebsocketRouter(system: ActorSystem[_]) extends SuportRouter {
     }
   )
 
+  private var clientId = 0
+
   private def createConnect(mechineId: String): Flow[Message, Message, _] = {
+
     val appClient: ActorRef[BaseSerializer] =
-      system.systemActorOf(AppClient(mechineId), s"mechine_${mechineId}")
+      system.systemActorOf(
+        AppClient(mechineId),
+        UUID.randomUUID().toString.replaceAll("-", "")
+      )
 
     val completion: PartialFunction[Any, CompletionStrategy] = {
       case AppClient.Shutdown =>
