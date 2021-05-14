@@ -51,8 +51,13 @@ class OrderRouter(system: ActorSystem[_]) extends SuportRouter {
     concat(
       get {
         path("user" / "info") {
-          parameters("platform".as[String], "userId".as[String]) {
-            (platform, userId) =>
+          parameters(
+            "platform".as[String],
+            "userId".as[String],
+            "sign".as[String],
+            "apiKey".as[String]
+          ) {
+            (platform, userId, sign, apiKey) =>
               {
 
                 val pf = PayPlatform.withName(platform)
@@ -60,36 +65,56 @@ class OrderRouter(system: ActorSystem[_]) extends SuportRouter {
 
                 val key = s"userInfo-${pf}-${userId}"
                 onComplete(
-                  cacheBehavior
-                    .ask(
-                      ReplicatedCacheBehavior.GetCache(key)
-                    )(3.seconds, system.scheduler)
-                    .flatMap {
-                      cacheValue =>
-                        {
-                          cacheValue.value match {
-                            case Some(value) =>
-                              Future.successful(
-                                value.asInstanceOf[Option[OrderModel.UserInfo]]
-                              )
-                            case None =>
-                              orderService
-                                .userInfo(pf, userId)
-                                .map(result => {
-                                  if (result.isDefined) {
-                                    cacheBehavior.tell(
-                                      ReplicatedCacheBehavior.PutCache(
-                                        key = key,
-                                        value = result,
-                                        timeout = 1.days
-                                      )
-                                    )
-                                  }
-                                  result
-                                })
-                          }
-                        }
+                  userService
+                    .info(apiKey)
+                    .map {
+                      case Some(value) => {
+                        require(
+                          MD5Util.md5(
+                            value.apiSecret + userId + platform
+                          ) == sign,
+                          signInvalidMsg
+                        )
+                        true
+                      }
+                      case None => throw new Exception(apiKeyNotFound)
                     }
+                    .recover {
+                      case e => throw new Exception(signInvalidMsg)
+                    }
+                    .flatMap(_ =>
+                      cacheBehavior
+                        .ask(
+                          ReplicatedCacheBehavior.GetCache(key)
+                        )(3.seconds, system.scheduler)
+                        .flatMap {
+                          cacheValue =>
+                            {
+                              cacheValue.value match {
+                                case Some(value) =>
+                                  Future.successful(
+                                    value
+                                      .asInstanceOf[Option[OrderModel.UserInfo]]
+                                  )
+                                case None =>
+                                  orderService
+                                    .userInfo(pf, userId)
+                                    .map(result => {
+                                      if (result.isDefined) {
+                                        cacheBehavior.tell(
+                                          ReplicatedCacheBehavior.PutCache(
+                                            key = key,
+                                            value = result,
+                                            timeout = 1.days
+                                          )
+                                        )
+                                      }
+                                      result
+                                    })
+                              }
+                            }
+                        }
+                    )
                 ) {
                   case Failure(exception) => {
                     exception.printStackTrace()

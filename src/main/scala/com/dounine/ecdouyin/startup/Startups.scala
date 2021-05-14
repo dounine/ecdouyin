@@ -83,8 +83,28 @@ class Startups(system: ActorSystem[_]) {
       .get(classOf[UserService])
       .add(
         UserModel.DbInfo(
-          apiKey = "hello",
-          apiSecret = "abc",
+          apiKey = "4229d691b07b13341da53f17ab9f2416",
+          apiSecret = "900150983cd24fb0d6963f7d28e17f72",
+          balance = BigDecimal("0.00"),
+          margin = BigDecimal("0.00"),
+          callback = Option.empty,
+          createTime = LocalDateTime.now()
+        )
+      )
+      .onComplete {
+        case Failure(exception) => {
+          logger.error(exception.getMessage)
+        }
+        case Success(value) =>
+          logger.info(s"insert user apikey result ${value}")
+      }
+
+    ServiceSingleton
+      .get(classOf[UserService])
+      .add(
+        UserModel.DbInfo(
+          apiKey = "lake",
+          apiSecret = "lake",
           balance = BigDecimal("10.00"),
           margin = BigDecimal("0.00"),
           callback = Option.empty,
@@ -98,6 +118,7 @@ class Startups(system: ActorSystem[_]) {
         case Success(value) =>
           logger.info(s"insert user apikey result ${value}")
       }
+
 
   }
 
