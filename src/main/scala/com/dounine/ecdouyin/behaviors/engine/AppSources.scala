@@ -17,7 +17,7 @@ object AppSources extends ActorSerializerSuport {
   private val logger = LoggerFactory.getLogger(AppSources.getClass)
   case class AppInfo(
       appId: String,
-      client: ActorRef[AppClient.Command],
+      client: ActorRef[BaseSerializer],
       balance: BigDecimal
   ) extends BaseSerializer {
     override def hashCode(): Int = appId.hashCode

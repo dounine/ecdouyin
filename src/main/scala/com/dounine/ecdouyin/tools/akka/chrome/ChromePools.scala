@@ -11,8 +11,6 @@ import org.apache.commons.pool2.impl.{
 
 class ChromePools(system: ActorSystem[_]) extends Extension {
 
-  println("chrome pools create -------------------")
-
   private final val config: Config = system.settings.config.getConfig("app")
   private val poolConfig: GenericObjectPoolConfig[Chrome] =
     new GenericObjectPoolConfig()

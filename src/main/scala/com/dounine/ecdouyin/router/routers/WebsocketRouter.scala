@@ -82,11 +82,11 @@ class WebsocketRouter(system: ActorSystem[_]) extends SuportRouter {
 
     val sink: Sink[String, NotUsed] = ActorSink.actorRefWithBackpressure(
       ref = appClient,
-      onInitMessage = (responseActorRef: ActorRef[AppClient.Command]) =>
+      onInitMessage = (responseActorRef: ActorRef[BaseSerializer]) =>
         AppClient
           .Connected(client = responseActorRef),
       messageAdapter =
-        (responseActorRef: ActorRef[AppClient.Command], element: String) =>
+        (responseActorRef: ActorRef[BaseSerializer], element: String) =>
           AppClient.MessageReceive(
             actor = responseActorRef,
             message = element

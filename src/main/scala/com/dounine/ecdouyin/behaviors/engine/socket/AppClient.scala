@@ -21,7 +21,7 @@ object AppClient extends ActorSerializerSuport {
   final case object Ack extends Command
 
   final case class MessageReceive(
-      actor: ActorRef[Command],
+      actor: ActorRef[BaseSerializer],
       message: String
   ) extends Command
 
@@ -102,7 +102,7 @@ object AppClient extends ActorSerializerSuport {
                     AppSources.Online(
                       AppSources.AppInfo(
                         appId = appId,
-                        client = actor,
+                        client = context.self,
                         balance = BigDecimal("0.00")
                       )
                     )
