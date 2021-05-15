@@ -24,6 +24,7 @@ import akka.stream.scaladsl.{
   GraphDSL,
   Keep,
   Merge,
+  MergePreferred,
   RestartSource,
   RunnableGraph,
   Sink,
@@ -142,7 +143,46 @@ class StreamForOptimizeTest
 
   "stream optimize" should {
 
-    "source concat" in {
+    "graph single repeat" in {
+      val source = Source(1 to 3)
+      RunnableGraph
+        .fromGraph(GraphDSL.create() { implicit builder =>
+          import GraphDSL.Implicits._
+
+//          val merge = builder.add(Merge[Int](2))
+          val zip = builder.add(ZipWith((left: Int, right: Int) => {
+            println(s"zip -> ${left}:${right}")
+            left
+          }))
+          val broadcast = builder.add(Broadcast[Int](2))
+          val start = Source.single(0)
+          val concat = builder.add(Concat[Int]())
+
+          source ~> zip.in0
+          zip.out ~> Flow[Int]
+            .throttle(1, 1.seconds)
+            .map(i => {
+              println(i); i * 10
+            }) ~> broadcast ~> Sink.foreach[Int](i => {
+            println(s"result -> ${i}")
+          })
+          zip.in1 <~ concat <~ start
+          concat <~ broadcast
+
+//          source ~> merge ~> Flow[Int]
+//            .throttle(1, 1.seconds)
+//            .map(i => { println(i); i }) ~> broadcast
+//          merge <~ Flow[Int].buffer(2, OverflowStrategy.fail) <~ broadcast
+
+          ClosedShape
+        })
+        .run()
+
+      TimeUnit.SECONDS.sleep(30)
+    }
+
+    "source concat" ignore {
+
       val a = Source(1 to 3)
       val b = Source(7 to 9)
         .throttle(1, 10.seconds)

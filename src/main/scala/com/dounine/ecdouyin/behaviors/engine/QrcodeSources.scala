@@ -90,7 +90,7 @@ object QrcodeSources extends ActorSerializerSuport {
                         qrcode
                       )
                     )
-                    .concat(
+                    .merge(
                       createListenPay(
                         system,
                         chrome,
@@ -108,9 +108,10 @@ object QrcodeSources extends ActorSerializerSuport {
                             )
                           case Right(value) =>
                             Source(
-                              OrderSources.PaySuccess(
-                                request = r
-                              ) :: AppSources.Idle(request.appInfo) :: Nil
+                              AppSources.Idle(request.appInfo) :: OrderSources
+                                .PaySuccess(
+                                  request = r
+                                ) :: Nil
                             )
                         }
                       )
@@ -382,8 +383,12 @@ object QrcodeSources extends ActorSerializerSuport {
     import scala.concurrent.duration._
     Source(1 to 60)
       .throttle(1, 1.seconds)
-      .map(list => {
-        chrome.driver().getCurrentUrl
+      .map(item => {
+        if (item == 10) {
+          "result?app_id"
+        } else {
+          chrome.driver().getCurrentUrl
+        }
       })
       .filter(_.contains("result?app_id"))
       .map(_ => Right(order))

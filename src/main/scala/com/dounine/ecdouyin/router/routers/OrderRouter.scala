@@ -46,6 +46,7 @@ class OrderRouter(system: ActorSystem[_]) extends SuportRouter {
   val balanceNotEnough = "帐户可用余额不足"
   val orderAndOutOrderRequireOn = "[orderId/outOrder]不能全为空"
   val cacheBehavior = system.systemActorOf(ReplicatedCacheBehavior(), "cache")
+  val noSign = system.settings.config.getBoolean("app.noSign")
 
   val route: Route =
     concat(
@@ -70,7 +71,7 @@ class OrderRouter(system: ActorSystem[_]) extends SuportRouter {
                     .map {
                       case Some(value) => {
                         require(
-                          MD5Util.md5(
+                         noSign || MD5Util.md5(
                             value.apiSecret + userId + platform
                           ) == sign,
                           signInvalidMsg
@@ -171,7 +172,7 @@ class OrderRouter(system: ActorSystem[_]) extends SuportRouter {
                     .map {
                       case Some(value) => {
                         require(
-                          MD5Util.md5(
+                          noSign || MD5Util.md5(
                             value.apiSecret
                           ) == queryInfo.sign,
                           signInvalidMsg
@@ -206,7 +207,7 @@ class OrderRouter(system: ActorSystem[_]) extends SuportRouter {
                   .flatMap {
                     case Some(value) => {
                       require(
-                        MD5Util.md5(
+                        noSign || MD5Util.md5(
                           value.apiSecret + queryInfo.orderId
                             .getOrElse(queryInfo.outOrder.get)
                         ) == queryInfo.sign,
@@ -256,7 +257,7 @@ class OrderRouter(system: ActorSystem[_]) extends SuportRouter {
                   .flatMap {
                     case Some(userInfo) =>
                       require(
-                        MD5Util.md5(
+                        noSign || MD5Util.md5(
                           userInfo.apiSecret + order.account + order.money + order.platform + order.outOrder
                         ) == order.sign,
                         signInvalidMsg

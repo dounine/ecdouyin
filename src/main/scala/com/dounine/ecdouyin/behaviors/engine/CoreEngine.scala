@@ -5,7 +5,17 @@ import akka.actor.typed.{ActorRef, Behavior}
 import akka.cluster.sharding.typed.scaladsl.EntityTypeKey
 import akka.persistence.typed.PersistenceId
 import akka.stream._
-import akka.stream.scaladsl.{Broadcast, Flow, GraphDSL, Keep, Merge, RunnableGraph, Source, SourceQueueWithComplete}
+import akka.stream.scaladsl.{
+  Broadcast,
+  Flow,
+  GraphDSL,
+  Keep,
+  Merge,
+  RunnableGraph,
+  Sink,
+  Source,
+  SourceQueueWithComplete
+}
 import akka.{Done, NotUsed}
 import com.dounine.ecdouyin.model.models.{BaseSerializer, OrderModel}
 import com.dounine.ecdouyin.tools.json.{ActorSerializerSuport, JsonParse}
@@ -85,9 +95,10 @@ object CoreEngine extends ActorSerializerSuport {
                   import GraphDSL.Implicits._
                   val broadcast
                       : UniformFanOutShape[BaseSerializer, BaseSerializer] =
-                    builder.add(Broadcast[BaseSerializer](3))
+                    builder.add(Broadcast[BaseSerializer](4))
                   val merge =
-                    builder.add(Merge[BaseSerializer](4))
+                    builder.add(Merge[BaseSerializer](5))
+                  val init = Source.single(OrderSources.QueryOrderInit())
 
                   //                                              ┌───────┐
                   //                                    ┌────────▶□  app  □──────┐
@@ -99,9 +110,14 @@ object CoreEngine extends ActorSerializerSuport {
                   //            │    │ │ │ │            └────────▶□qrcode □──────┤
                   //            │    │ │ │ │                      └───────┘      │
                   //            └────┘ └─┴─┴─────────────────────────────────────┘
-                  request ~> merge ~> broadcast ~> appFlow ~> merge.in(1)
+                  request ~> merge ~> Flow[BaseSerializer].buffer(
+                    100,
+                    OverflowStrategy.fail
+                  ) ~> broadcast ~> appFlow ~> merge.in(1)
                   broadcast ~> qrcodeFlow ~> merge.in(2)
                   broadcast ~> orderFlow ~> merge.in(3)
+                  broadcast ~> Sink.ignore
+                  merge.in(4) <~ init
 
                   ClosedShape
                 }

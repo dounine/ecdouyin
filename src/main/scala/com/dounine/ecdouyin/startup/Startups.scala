@@ -123,16 +123,16 @@ class Startups(system: ActorSystem[_]) {
   }
 
   def httpAfter(): Unit = {
-    sharding
-      .entityRefFor(
-        CoreEngine.typeKey,
-        CoreEngine.typeKey.name
-      )
-      .ask(
-        CoreEngine.Message(
-          OrderSources.QueryOrderInit()
-        )
-      )(3.seconds)
+//    sharding
+//      .entityRefFor(
+//        CoreEngine.typeKey,
+//        CoreEngine.typeKey.name
+//      )
+//      .ask(
+//        CoreEngine.Message(
+//          OrderSources.QueryOrderInit()
+//        )
+//      )(3.seconds)
   }
 
 }
