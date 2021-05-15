@@ -384,11 +384,7 @@ object QrcodeSources extends ActorSerializerSuport {
     Source(1 to 60)
       .throttle(1, 1.seconds)
       .map(item => {
-        if (item == 10) {
-          "result?app_id"
-        } else {
-          chrome.driver().getCurrentUrl
-        }
+        chrome.driver().getCurrentUrl
       })
       .filter(_.contains("result?app_id"))
       .map(_ => Right(order))

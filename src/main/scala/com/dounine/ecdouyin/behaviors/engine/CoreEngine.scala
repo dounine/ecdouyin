@@ -100,16 +100,20 @@ object CoreEngine extends ActorSerializerSuport {
                     builder.add(Merge[BaseSerializer](5))
                   val init = Source.single(OrderSources.QueryOrderInit())
 
-                  //                                              ┌───────┐
-                  //                                    ┌────────▶□  app  □──────┐
-                  //                                    │         └───────┘      │
-                  //┌─────────┐   ┌─────────┐     ┌─────□─────┐   ┌───────┐      │
-                  //│ request □─┐ │  merge  □  ─▶ □ broadcast │──▶□ order □──────┤
+                  //                                           ┌─────────────┐
+                  //                ┌──────┐            ┌─────▶□ Sink.ignore │
+                  //                │ init │            │      └─────────────┘
+                  //                └──□───┘            │         ┌───────┐
+                  //                   │                ├────────▶□  app  □ ─────┐
+                  //                   ▼                │         └───────┘      │
+                  //┌─────────┐   ┌────□────┐     ┌─────□─────┐   ┌───────┐      │
+                  //│ source  □─┐ │  merge  □ ──▶ □ broadcast │──▶□ order □ ─────┤
                   //└─────────┘ │ └──□─□─□─□┘     └─────□─────┘   └───────┘      │
                   //            │    ▲ ▲ ▲ ▲            │         ┌───────┐      │
-                  //            │    │ │ │ │            └────────▶□qrcode □──────┤
+                  //            │    │ │ │ │            └────────▶□qrcode □ ─────┤
                   //            │    │ │ │ │                      └───────┘      │
                   //            └────┘ └─┴─┴─────────────────────────────────────┘
+
                   request ~> merge ~> Flow[BaseSerializer].buffer(
                     100,
                     OverflowStrategy.fail
