@@ -152,6 +152,27 @@ object OrderSources extends ActorSerializerSuport {
           }
           case Create(order) => {
             orders = orders ++ Set(order)
+            DingDing.sendMessage(
+              DingDing.MessageType.order,
+              data = DingDing.MessageData(
+                markdown = DingDing.Markdown(
+                  title = "定单通知",
+                  text = s"""
+                            |## 创建成功
+                            | - apiKey: ${order.apiKey}
+                            | - money: ${order.money}
+                            | - orderId: ${order.orderId}
+                            | - outOrder: ${order.outOrder}
+                            | - account: ${order.account}
+                            | - payCount: ${order.payCount}
+                            | - platform: ${order.platform}
+                            | - createTime: ${order.createTime}
+                            | - notifyTime -> ${LocalDateTime.now()}
+                            |""".stripMargin
+                )
+              ),
+              system
+            )
             Nil
           }
           case PaySuccess(request) => {

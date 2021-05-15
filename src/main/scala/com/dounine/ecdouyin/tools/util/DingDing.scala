@@ -24,6 +24,7 @@ object DingDing extends JsonParse {
     type MessageType = Value
     val system = Value("system_notify")
     val app = Value("app_notify")
+    val order = Value("order_notify")
     val payed = Value("payed_notify")
     val payerr = Value("payerr_notify")
   }
