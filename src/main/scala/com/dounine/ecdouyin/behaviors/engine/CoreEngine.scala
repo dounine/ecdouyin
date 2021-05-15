@@ -1,7 +1,7 @@
 package com.dounine.ecdouyin.behaviors.engine
 
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
-import akka.actor.typed.{ActorRef, Behavior}
+import akka.actor.typed.{ActorRef, Behavior, PostStop}
 import akka.cluster.sharding.typed.scaladsl.EntityTypeKey
 import akka.persistence.typed.PersistenceId
 import akka.stream._
@@ -19,8 +19,10 @@ import akka.stream.scaladsl.{
 import akka.{Done, NotUsed}
 import com.dounine.ecdouyin.model.models.{BaseSerializer, OrderModel}
 import com.dounine.ecdouyin.tools.json.{ActorSerializerSuport, JsonParse}
+import com.dounine.ecdouyin.tools.util.DingDing
 import org.slf4j.LoggerFactory
 
+import java.time.LocalDateTime
 import scala.concurrent.Promise
 import scala.util.{Failure, Success}
 
@@ -128,7 +130,7 @@ object CoreEngine extends ActorSerializerSuport {
           })
           .run()
 
-        Behaviors.receiveMessage {
+        Behaviors.receiveMessage[BaseSerializer] {
           case e @ Init() => {
             Behaviors.same
           }
@@ -204,6 +206,23 @@ object CoreEngine extends ActorSerializerSuport {
             request.replyTo.tell(Done)
             Behaviors.same
           }
+        }
+      }.receiveSignal {
+        case (context, PostStop) => {
+          DingDing.sendMessage(
+            DingDing.MessageType.system,
+            data = DingDing.MessageData(
+              markdown = DingDing.Markdown(
+                title = "系统通知",
+                text = s"""
+                            |# CoreEngine 引擎退出
+                            | - time: ${LocalDateTime.now()}
+                            |""".stripMargin
+              )
+            ),
+            context.system
+          )
+          Behaviors.stopped
         }
       }
     }

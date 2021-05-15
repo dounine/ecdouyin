@@ -7,6 +7,8 @@ import akka.cluster.sharding.typed.scaladsl.ClusterSharding
 import com.dounine.ecdouyin.behaviors.engine.CoreEngine
 import com.dounine.ecdouyin.tools.akka.chrome.ChromePools
 import com.dounine.ecdouyin.tools.akka.db.DataSource
+import com.dounine.ecdouyin.tools.util.DingDing
+import org.joda.time.LocalDateTime
 import org.slf4j.LoggerFactory
 
 import scala.concurrent.Future
@@ -56,6 +58,23 @@ class Shutdowns(system: ActorSystem[_]) {
             }
           }
       }
+
+    CoordinatedShutdown(system).addJvmShutdownHook(() => {
+      DingDing.sendMessage(
+        DingDing.MessageType.system,
+        data = DingDing.MessageData(
+          markdown = DingDing.Markdown(
+            title = "系统通知",
+            text = s"""
+                |# 程序停止
+                | - time: ${LocalDateTime.now()}
+                |""".stripMargin
+          )
+        ),
+        system
+      )
+
+    })
 
   }
 

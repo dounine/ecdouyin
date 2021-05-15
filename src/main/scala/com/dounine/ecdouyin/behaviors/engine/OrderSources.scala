@@ -9,9 +9,10 @@ import com.dounine.ecdouyin.model.models.{BaseSerializer, OrderModel}
 import com.dounine.ecdouyin.model.types.service.PayStatus
 import com.dounine.ecdouyin.service.{OrderService, UserService}
 import com.dounine.ecdouyin.tools.json.{ActorSerializerSuport, JsonParse}
-import com.dounine.ecdouyin.tools.util.ServiceSingleton
+import com.dounine.ecdouyin.tools.util.{DingDing, ServiceSingleton}
 import org.slf4j.LoggerFactory
 
+import java.time.LocalDateTime
 import scala.concurrent.Future
 
 object OrderSources extends ActorSerializerSuport {
@@ -158,6 +159,27 @@ object OrderSources extends ActorSerializerSuport {
               status = PayStatus.payed,
               margin = BigDecimal("0")
             )
+            DingDing.sendMessage(
+              DingDing.MessageType.payed,
+              data = DingDing.MessageData(
+                markdown = DingDing.Markdown(
+                  title = "充值通知",
+                  text = s"""
+                            |## 充值成功
+                            | - apiKey: ${order.apiKey}
+                            | - money: ${order.money}
+                            | - orderId: ${order.orderId}
+                            | - outOrder: ${order.outOrder}
+                            | - account: ${order.account}
+                            | - payCount: ${order.payCount}
+                            | - platform: ${order.platform}
+                            | - createTime: ${order.createTime}
+                            | - notifyTime -> ${LocalDateTime.now()}
+                            |""".stripMargin
+                )
+              ),
+              system
+            )
             UpdateOrderToUser(
               request.order.copy(
                 status = PayStatus.payed,
@@ -186,6 +208,28 @@ object OrderSources extends ActorSerializerSuport {
               val orderTmp = order.copy(
                 margin = BigDecimal("0")
               )
+              DingDing.sendMessage(
+                DingDing.MessageType.payerr,
+                data = DingDing.MessageData(
+                  markdown = DingDing.Markdown(
+                    title = "充值通知",
+                    text = s"""
+                              |## 充值失败、入库
+                              | - apiKey: ${order.apiKey}
+                              | - money: ${order.money}
+                              | - orderId: ${order.orderId}
+                              | - outOrder: ${order.outOrder}
+                              | - account: ${order.account}
+                              | - payCount: ${order.payCount}
+                              | - platform: ${order.platform}
+                              | - createTime: ${order.createTime}
+                              | - errorMsg: ${error}
+                              | - notifyTime -> ${LocalDateTime.now()}
+                              |""".stripMargin
+                  )
+                ),
+                system
+              )
               UpdateOrderToUser(
                 orderTmp,
                 margin = order.margin,
@@ -193,6 +237,28 @@ object OrderSources extends ActorSerializerSuport {
                 repeat = 0
               ) :: OrderCallback(orderTmp) :: Nil
             } else {
+              DingDing.sendMessage(
+                DingDing.MessageType.payerr,
+                data = DingDing.MessageData(
+                  markdown = DingDing.Markdown(
+                    title = "充值通知",
+                    text = s"""
+                              |## 充值失败、重试中
+                              | - apiKey: ${order.apiKey}
+                              | - money: ${order.money}
+                              | - orderId: ${order.orderId}
+                              | - outOrder: ${order.outOrder}
+                              | - account: ${order.account}
+                              | - payCount: ${order.payCount}
+                              | - platform: ${order.platform}
+                              | - createTime: ${order.createTime}
+                              | - errorMsg: ${error}
+                              | - notifyTime -> ${LocalDateTime.now()}
+                              |""".stripMargin
+                  )
+                ),
+                system
+              )
               orders = orders ++ Set(
                 order
               )

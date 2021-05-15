@@ -1,15 +1,17 @@
 package com.dounine.ecdouyin.behaviors.engine.socket
 
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
-import akka.actor.typed.{ActorRef, Behavior}
+import akka.actor.typed.{ActorRef, Behavior, PostStop}
 import akka.cluster.sharding.typed.scaladsl.ClusterSharding
 import com.dounine.ecdouyin.behaviors.engine.{AppSources, CoreEngine}
 import com.dounine.ecdouyin.model.models.BaseSerializer
 import com.dounine.ecdouyin.model.types.service.AppPage.AppPage
 import com.dounine.ecdouyin.model.types.service.PayPlatform.PayPlatform
 import com.dounine.ecdouyin.tools.json.{ActorSerializerSuport, JsonParse}
+import com.dounine.ecdouyin.tools.util.DingDing
 import org.slf4j.LoggerFactory
 
+import java.time.LocalDateTime
 import scala.concurrent.duration.FiniteDuration
 
 object AppClient extends ActorSerializerSuport {
@@ -71,101 +73,137 @@ object AppClient extends ActorSerializerSuport {
     Behaviors.setup[BaseSerializer] { context: ActorContext[BaseSerializer] =>
       {
         val sharding = ClusterSharding(context.system)
-
+        val startTime = LocalDateTime.now()
         def datas(data: DataStore): Behavior[BaseSerializer] =
-          Behaviors.receiveMessage {
-            case e @ Ack => {
-              Behaviors.same
-            }
-            case e @ Connected(actor) => {
-              logger.info(e.logJson)
-              actor.tell(Ack)
-              Behaviors.same
-            }
-            case e @ CoreEngine.MessageOk(request) => {
-              logger.info(e.logJson)
-              Behaviors.same
-            }
-            case e @ CoreEngine.MessageFail(request, message) => {
-              logger.info(e.logJson)
-              Behaviors.same
-            }
-            case e @ InitActor(actor) => {
-              logger.info(e.logJson)
-              sharding
-                .entityRefFor(
-                  CoreEngine.typeKey,
-                  CoreEngine.typeKey.name
-                )
-                .tell(
-                  CoreEngine.Message(
-                    AppSources.Online(
-                      AppSources.AppInfo(
-                        appId = appId,
-                        client = context.self,
-                        balance = BigDecimal("0.00")
+          Behaviors
+            .receiveMessage[BaseSerializer] {
+              case e @ Ack => {
+                Behaviors.same
+              }
+              case e @ Connected(actor) => {
+                logger.info(e.logJson)
+                actor.tell(Ack)
+                Behaviors.same
+              }
+              case e @ CoreEngine.MessageOk(request) => {
+                logger.info(e.logJson)
+                Behaviors.same
+              }
+              case e @ CoreEngine.MessageFail(request, message) => {
+                logger.info(e.logJson)
+                Behaviors.same
+              }
+              case e @ InitActor(actor) => {
+                logger.info(e.logJson)
+                sharding
+                  .entityRefFor(
+                    CoreEngine.typeKey,
+                    CoreEngine.typeKey.name
+                  )
+                  .tell(
+                    CoreEngine.Message(
+                      AppSources.Online(
+                        AppSources.AppInfo(
+                          appId = appId,
+                          client = context.self,
+                          balance = BigDecimal("0.00")
+                        )
                       )
+                    )(context.self)
+                  )
+                DingDing.sendMessage(
+                  DingDing.MessageType.app,
+                  data = DingDing.MessageData(
+                    markdown = DingDing.Markdown(
+                      title = "手机通知",
+                      text = s"""
+                                |# 已连接
+                                | - appId: ${appId}
+                                | - startTime: ${startTime}
+                                | - time: ${LocalDateTime.now()}
+                                |""".stripMargin
                     )
-                  )(context.self)
+                  ),
+                  context.system
                 )
-              datas(
-                data.copy(
-                  client = Option(actor)
+                datas(
+                  data.copy(
+                    client = Option(actor)
+                  )
                 )
-              )
-            }
-            case e @ OrderCreate(
-                  qrcode,
-                  domain,
-                  orderId,
-                  money,
-                  volume,
-                  platform,
-                  timeout
-                ) => {
-              logger.info(e.logJson)
-              data.client.foreach(
-                _.tell(
-                  OutgoingMessage(
-                    `type` = "order",
-                    data = Option(
-                      Map(
-                        "qrcode" -> qrcode,
-                        "domain" -> domain,
-                        "orderId" -> orderId,
-                        "money" -> money,
-                        "volume" -> volume,
-                        "platform" -> platform,
-                        "timeout" -> timeout
+              }
+              case e @ OrderCreate(
+                    qrcode,
+                    domain,
+                    orderId,
+                    money,
+                    volume,
+                    platform,
+                    timeout
+                  ) => {
+                logger.info(e.logJson)
+                data.client.foreach(
+                  _.tell(
+                    OutgoingMessage(
+                      `type` = "order",
+                      data = Option(
+                        Map(
+                          "qrcode" -> qrcode,
+                          "domain" -> domain,
+                          "orderId" -> orderId,
+                          "money" -> money,
+                          "volume" -> volume,
+                          "platform" -> platform,
+                          "timeout" -> timeout
+                        )
                       )
                     )
                   )
                 )
-              )
-              Behaviors.same
+                Behaviors.same
+              }
+              case e @ MessageReceive(actor, message) => {
+                logger.info(e.logJson)
+                actor.tell(Ack)
+                Behaviors.same
+              }
+              case e @ Shutdown => {
+                logger.info(e.logJson)
+                sharding
+                  .entityRefFor(
+                    CoreEngine.typeKey,
+                    CoreEngine.typeKey.name
+                  )
+                  .tell(
+                    CoreEngine.Message(
+                      AppSources.Offline(
+                        appId = appId
+                      )
+                    )(context.self)
+                  )
+                Behaviors.same
+              }
             }
-            case e @ MessageReceive(actor, message) => {
-              logger.info(e.logJson)
-              actor.tell(Ack)
-              Behaviors.same
-            }
-            case e @ Shutdown => {
-              logger.info(e.logJson)
-              sharding
-                .entityRefFor(
-                  CoreEngine.typeKey,
-                  CoreEngine.typeKey.name
-                )
-                .tell(
-                  CoreEngine.Message(
-                    AppSources.Offline(
-                      appId = appId
+            .receiveSignal {
+              case (_, PostStop) => {
+                DingDing.sendMessage(
+                  DingDing.MessageType.app,
+                  data = DingDing.MessageData(
+                    markdown = DingDing.Markdown(
+                      title = "手机通知",
+                      text = s"""
+                              |# 断开连接
+                              | - appId: ${appId}
+                              | - startTime: ${startTime}
+                              | - time: ${LocalDateTime.now()}
+                              |""".stripMargin
                     )
-                  )(context.self)
+                  ),
+                  context.system
                 )
-              Behaviors.same
+                Behaviors.stopped
+              }
             }
-          }
 
         datas(
           DataStore(

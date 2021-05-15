@@ -8,21 +8,11 @@ import akka.cluster.sharding.typed.scaladsl.{ClusterSharding, Entity}
 import akka.persistence.typed.PersistenceId
 import com.dounine.ecdouyin.behaviors.engine.{CoreEngine, OrderSources}
 import com.dounine.ecdouyin.model.models.UserModel
-import com.dounine.ecdouyin.service.{
-  DictionaryService,
-  OrderService,
-  UserService
-}
-import com.dounine.ecdouyin.store.{
-  AkkaPersistenerJournalTable,
-  AkkaPersistenerSnapshotTable,
-  DictionaryTable,
-  OrderTable,
-  UserTable
-}
+import com.dounine.ecdouyin.service.{DictionaryService, OrderService, UserService}
+import com.dounine.ecdouyin.store.{AkkaPersistenerJournalTable, AkkaPersistenerSnapshotTable, DictionaryTable, OrderTable, UserTable}
 import com.dounine.ecdouyin.tools.akka.chrome.ChromePools
 import com.dounine.ecdouyin.tools.akka.db.DataSource
-import com.dounine.ecdouyin.tools.util.ServiceSingleton
+import com.dounine.ecdouyin.tools.util.{DingDing, ServiceSingleton}
 import org.slf4j.LoggerFactory
 import slick.lifted
 
@@ -123,6 +113,19 @@ class Startups(system: ActorSystem[_]) {
   }
 
   def httpAfter(): Unit = {
+    DingDing.sendMessage(
+      DingDing.MessageType.system,
+      data = DingDing.MessageData(
+        markdown = DingDing.Markdown(
+          title = "系统通知", text =
+            s"""
+              |# 程序启动
+              | - time: ${LocalDateTime.now()}
+              |""".stripMargin
+        )
+      ),
+      system
+    )
 //    sharding
 //      .entityRefFor(
 //        CoreEngine.typeKey,

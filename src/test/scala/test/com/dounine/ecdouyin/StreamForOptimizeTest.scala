@@ -39,6 +39,7 @@ import akka.stream.typed.scaladsl.ActorSource
 import com.dounine.ecdouyin.model.models.BaseSerializer
 import com.dounine.ecdouyin.store.EnumMappers
 import com.dounine.ecdouyin.tools.json.JsonParse
+import com.dounine.ecdouyin.tools.util.DingDing
 import com.typesafe.config.ConfigFactory
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpecLike
@@ -143,7 +144,29 @@ class StreamForOptimizeTest
 
   "stream optimize" should {
 
-    "graph single repeat" in {
+    "dingding" in {
+      DingDing.sendMessage(
+        DingDing.MessageType.system,
+        data = DingDing.MessageData(
+          markdown = DingDing.Markdown(
+            title = "系统通知",
+            text = s"""
+                |# 这是支持markdown的文本
+                | - apiKey: hello
+                | - account: hi
+                | - money: 6
+                |
+                |time -> ${LocalDateTime.now()}
+                |""".stripMargin
+          )
+        ),
+        system
+      )
+
+      TimeUnit.SECONDS.sleep(1)
+    }
+
+    "graph single repeat" ignore {
       val source = Source(1 to 3)
       RunnableGraph
         .fromGraph(GraphDSL.create() { implicit builder =>
