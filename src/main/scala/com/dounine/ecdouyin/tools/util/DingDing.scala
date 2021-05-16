@@ -41,38 +41,40 @@ object DingDing extends JsonParse {
       data: MessageData,
       system: ActorSystem[_]
   ): Unit = {
-    implicit val ec = system.executionContext
-    implicit val materializer = Materializer(system)
-    val http = Http(system)
-    http
-      .singleRequest(
-        request = HttpRequest(
-          method = HttpMethods.POST,
-          uri = system.settings.config.getString(s"app.notify.${mType}"),
-          entity = HttpEntity(
-            contentType = MediaTypes.`application/json`,
-            string = data.toJson
+    if (!system.settings.config.getBoolean("app.dev")) {
+      implicit val ec = system.executionContext
+      implicit val materializer = Materializer(system)
+      val http = Http(system)
+      http
+        .singleRequest(
+          request = HttpRequest(
+            method = HttpMethods.POST,
+            uri = system.settings.config.getString(s"app.notify.${mType}"),
+            entity = HttpEntity(
+              contentType = MediaTypes.`application/json`,
+              string = data.toJson
+            )
           )
         )
-      )
-      .flatMap {
-        case HttpResponse(_, _, entity, _) => {
-          entity.dataBytes
-            .runFold(ByteString.empty)(_ ++ _)
-            .map(_.utf8String)
+        .flatMap {
+          case HttpResponse(_, _, entity, _) => {
+            entity.dataBytes
+              .runFold(ByteString.empty)(_ ++ _)
+              .map(_.utf8String)
+          }
+          case ee: HttpResponse => {
+            throw new Exception(s"消息发送失败 -> ${ee.toString()}")
+          }
         }
-        case ee: HttpResponse => {
-          throw new Exception(s"消息发送失败 -> ${ee.toString()}")
+        .map(Right.apply)
+        .recover {
+          case e => Left(e.getMessage)
         }
-      }
-      .map(Right.apply)
-      .recover {
-        case e => Left(e.getMessage)
-      }
-      .foreach {
-        case Left(value)  => logger.error(value)
-        case Right(value) => logger.info("消息发送成功 -> " + value)
-      }
+        .foreach {
+          case Left(value)  => logger.error(value)
+          case Right(value) => logger.info("消息发送成功 -> " + value)
+        }
+    }
   }
 
 }
