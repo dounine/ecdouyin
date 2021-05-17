@@ -120,7 +120,6 @@ object AppSources extends ActorSerializerSuport {
             Nil
           }
           case Idle(appInfo) => {
-            logger.info("idle ---- {}:{}", offline, appInfo)
             if (offline.contains(appInfo.appId)) {
               offline = offline.filterNot(_ == appInfo.appId)
               Nil
