@@ -169,6 +169,21 @@ object AppClient extends ActorSerializerSuport {
               }
               case e @ Shutdown => {
                 logger.info(e.logJson)
+                DingDing.sendMessage(
+                  DingDing.MessageType.app,
+                  data = DingDing.MessageData(
+                    markdown = DingDing.Markdown(
+                      title = "手机通知",
+                      text = s"""
+                                |# 断开连接
+                                | - appId: ${appId}
+                                | - startTime: ${startTime}
+                                | - time: ${LocalDateTime.now()}
+                                |""".stripMargin
+                    )
+                  ),
+                  context.system
+                )
                 sharding
                   .entityRefFor(
                     CoreEngine.typeKey,
@@ -182,26 +197,6 @@ object AppClient extends ActorSerializerSuport {
                     )(context.self)
                   )
                 Behaviors.same
-              }
-            }
-            .receiveSignal {
-              case (_, PostStop) => {
-                DingDing.sendMessage(
-                  DingDing.MessageType.app,
-                  data = DingDing.MessageData(
-                    markdown = DingDing.Markdown(
-                      title = "手机通知",
-                      text = s"""
-                              |# 断开连接
-                              | - appId: ${appId}
-                              | - startTime: ${startTime}
-                              | - time: ${LocalDateTime.now()}
-                              |""".stripMargin
-                    )
-                  ),
-                  context.system
-                )
-                Behaviors.stopped
               }
             }
 
