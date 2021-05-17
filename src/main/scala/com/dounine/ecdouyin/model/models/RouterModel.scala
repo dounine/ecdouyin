@@ -5,18 +5,21 @@ import com.dounine.ecdouyin.model.types.router.ResponseCode.ResponseCode
 
 object RouterModel {
 
+  sealed trait JsonData
+
   case class Data(
-                   data: Option[Any] = Option.empty[Any],
-                   code: ResponseCode = ResponseCode.ok
-                 )
+      data: Option[Any] = None,
+      msg: Option[String] = None,
+      code: ResponseCode = ResponseCode.ok
+  ) extends JsonData
 
   case class Ok(
-                 code: ResponseCode = ResponseCode.ok
-               )
+      code: ResponseCode = ResponseCode.ok
+  ) extends JsonData
 
   case class Fail(
-                   msg: Option[String] = Option.empty[String],
-                   code: ResponseCode = ResponseCode.fail
-                 )
+      msg: Option[String] = None,
+      code: ResponseCode = ResponseCode.fail
+  ) extends JsonData
 
 }

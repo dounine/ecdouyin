@@ -18,8 +18,8 @@ class UserService(system: ActorSystem[_]) extends EnumMappers {
   def info(apiKey: String): Future[Option[UserModel.DbInfo]] =
     db.run(dict.filter(_.apiKey === apiKey).result.headOption)
 
-  def add(info: UserModel.DbInfo): Future[Option[Int]] =
-    db.run(dict ++= Seq(info))
+  def add(info: UserModel.DbInfo): Future[Int] =
+    db.run(dict += info)
 
   def margin(apiKey: String, margin: BigDecimal): Future[Int] = {
     db.run(dict.filter(_.apiKey === apiKey).result.headOption)

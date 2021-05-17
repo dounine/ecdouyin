@@ -4,12 +4,6 @@ import java.lang.reflect.{Constructor, Method, Modifier}
 
 object CopyUtil {
 
-  def main(args: Array[String]): Unit = {
-    val hello = ""
-
-    println(hello)
-  }
-
   def copy[T](o: T)(values: Map[String, Any]): T = {
     if (values.isEmpty) return o
     new Copier(o.getClass)(o, values)

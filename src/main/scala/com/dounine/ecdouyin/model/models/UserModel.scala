@@ -22,4 +22,5 @@ object UserModel {
       balance: Rep[BigDecimal]
   ) extends BaseSerializer
 
+
 }

@@ -51,7 +51,6 @@ object OrderModel {
   ) extends BaseSerializer
 
   final case class Query(
-      apiKey: String,
       orderId: Option[String],
       outOrder: Option[String],
       sign: String
@@ -105,5 +104,12 @@ object OrderModel {
       status_code: Int,
       data: DouYinSearchData
   )
+
+  final case class CreateOrderSuccess(
+      orderId: String,
+      outOrder: String,
+      balance: String,
+      margin: String
+  ) extends BaseSerializer
 
 }

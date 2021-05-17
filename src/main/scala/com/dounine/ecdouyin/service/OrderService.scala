@@ -9,6 +9,7 @@ import akka.http.scaladsl.model.{
   HttpResponse,
   MediaTypes
 }
+import akka.stream.alpakka.slick.scaladsl.SlickSession
 import akka.stream.{RestartSettings, SystemMaterializer}
 import akka.stream.scaladsl.{RestartSource, Sink, Source}
 import akka.util.ByteString
@@ -38,6 +39,8 @@ class OrderService(system: ActorSystem[_]) extends EnumMappers {
   implicit val materializer = SystemMaterializer(system).materializer
   private val logger = LoggerFactory.getLogger(classOf[OrderService])
   private val http = Http(system)
+  implicit val slickSession =
+    SlickSession.forDbAndProfile(db, slick.jdbc.MySQLProfile)
 
   def infoOrder(orderId: Long): Future[Option[OrderModel.DbInfo]] =
     db.run(dict.filter(_.orderId === orderId).result.headOption)
@@ -53,6 +56,8 @@ class OrderService(system: ActorSystem[_]) extends EnumMappers {
       insertAndGetId += info
     )
   }
+
+
 
   def addOrderAndMarginUser(info: OrderModel.DbInfo): Future[Long] = {
     db.run((for {

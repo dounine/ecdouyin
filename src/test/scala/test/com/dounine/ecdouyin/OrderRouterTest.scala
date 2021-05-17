@@ -224,7 +224,7 @@ class OrderRouterTest
         .foreach({ orderId =>
           {
             val query = OrderModel.Query(
-              apiKey = userInfo.apiKey,
+//              apiKey = userInfo.apiKey,
               orderId = Option(orderId),
               outOrder = None,
               sign = ""

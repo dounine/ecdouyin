@@ -13,18 +13,18 @@ import com.dounine.ecdouyin.store.{AkkaPersistenerJournalTable, AkkaPersistenerS
 import com.dounine.ecdouyin.tools.akka.chrome.ChromePools
 import com.dounine.ecdouyin.tools.akka.db.DataSource
 import com.dounine.ecdouyin.tools.util.{DingDing, ServiceSingleton}
-import org.slf4j.LoggerFactory
+import org.slf4j.{Logger, LoggerFactory}
 import slick.lifted
 
 import java.time.LocalDateTime
-import scala.concurrent.{Await, Future}
+import scala.concurrent.{Await, ExecutionContextExecutor, Future}
 import scala.concurrent.duration._
 import scala.util.{Failure, Success}
 
 class Startups(system: ActorSystem[_]) {
-  private val logger = LoggerFactory.getLogger(classOf[Startups])
-  implicit val ec = system.executionContext
-  val sharding = ClusterSharding(system)
+  private val logger: Logger = LoggerFactory.getLogger(classOf[Startups])
+  implicit val ec: ExecutionContextExecutor = system.executionContext
+  val sharding: ClusterSharding = ClusterSharding(system)
 
   def start(): Unit = {
     sharding.init(
@@ -66,7 +66,7 @@ class Startups(system: ActorSystem[_]) {
           Duration.Inf
         )
       } catch {
-        case e =>
+        case e: Throwable =>
       }
     })
     ServiceSingleton
@@ -82,9 +82,8 @@ class Startups(system: ActorSystem[_]) {
         )
       )
       .onComplete {
-        case Failure(exception) => {
+        case Failure(exception) =>
           logger.error(exception.getMessage)
-        }
         case Success(value) =>
           logger.info(s"insert user apikey result ${value}")
       }

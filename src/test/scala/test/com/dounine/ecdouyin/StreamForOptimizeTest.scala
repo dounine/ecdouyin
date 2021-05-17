@@ -8,12 +8,14 @@ import akka.actor.testkit.typed.scaladsl.{
 import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.Behaviors
 import akka.event.LogMarker
+import akka.http.scaladsl.model.{HttpEntity, MediaTypes}
 import akka.stream.{
   Attributes,
   ClosedShape,
   Materializer,
   OverflowStrategy,
   RestartSettings,
+  SinkShape,
   SourceShape,
   SystemMaterializer
 }
@@ -25,6 +27,8 @@ import akka.stream.scaladsl.{
   Keep,
   Merge,
   MergePreferred,
+  OrElse,
+  Partition,
   RestartSource,
   RunnableGraph,
   Sink,
@@ -36,7 +40,9 @@ import akka.stream.scaladsl.{
 }
 import akka.stream.testkit.scaladsl.TestSink
 import akka.stream.typed.scaladsl.ActorSource
+import akka.util.ByteString
 import com.dounine.ecdouyin.model.models.BaseSerializer
+import com.dounine.ecdouyin.router.routers.errors.DataException
 import com.dounine.ecdouyin.store.EnumMappers
 import com.dounine.ecdouyin.tools.json.JsonParse
 import com.dounine.ecdouyin.tools.util.DingDing
@@ -144,7 +150,133 @@ class StreamForOptimizeTest
 
   "stream optimize" should {
 
-    "dingding" in {
+    "stream error divertTo" in {
+
+      val validFlow: Flow[Int, Either[Exception, Int], NotUsed] =
+        Flow[Int].map(i => {
+          if (i == 1) {
+            Left(new Exception("valid error"))
+          } else {
+            Right(i)
+          }
+        })
+      val persistenceFlow: Flow[Int, Either[Exception, Int], NotUsed] =
+        Flow[Int]
+          .mapAsync(1) { i =>
+            Future {
+              if (i == 2) {
+                Left(new Exception("persistence error"))
+              } else Right(i)
+            }
+          }
+      val engineFlow: Flow[Int, Either[Exception, Int], NotUsed] = Flow[Int]
+        .mapAsync(1) { i =>
+          Future {
+            if (i == 1) {
+              Right(i)
+            } else Left(new Exception("engine error"))
+          }
+        }
+
+      val source = Source.fromGraph(GraphDSL.create() { implicit builder =>
+        {
+          import GraphDSL.Implicits._
+
+          val source = builder.add(Source.single(3))
+          val valid = builder.add(validFlow)
+          val partition = builder.add(
+            Partition[Either[Throwable, Int]](
+              2,
+              {
+                case Left(value)  => 1
+                case Right(value) => 0
+              }
+            )
+          )
+          val persistence = builder.add(persistenceFlow)
+          val partitionPersistence = builder.add(Flow[Either[Throwable, Int]].collect {
+            case Right(value) => value
+          })
+//          val engine = builder.add(engineFlow)
+//          val broadcast = builder.add(Broadcast[Int](4))
+          val output = builder.add(Concat[Either[Throwable, Int]](2))
+
+          /**
+            * source ~~~~~> valid ~~~~~~> persistence ~~~~~> output
+            */
+          source ~> valid ~> partition
+          partition.out(0) ~> partitionPersistence  ~> persistence ~> output.in(0)
+
+          /**
+            * valid ~~~> filter error ~~~~> output
+            */
+          partition.out(1) ~> Flow[Either[Throwable, Int]].collect {
+            case e @ Left(value) => e
+          } ~> output.in(1)
+
+//          valid.collect {
+//            case Right(value) => value
+//          } ~> persistence
+//          valid.collect{
+//            case Left(value) => value
+//          } ~> output
+          SourceShape(output.out)
+        }
+      })
+
+      source.runForeach {
+        case Left(value)  => info(value.toString)
+        case Right(value) => info(value.toString)
+      }.futureValue shouldBe Done
+
+    }
+
+    "flow via err test" ignore {
+      val source = Source.single(1)
+      val validingFlow: Flow[Int, Int, NotUsed] = Flow[Int]
+        .map(i => {
+          if (i == 1) {
+            throw new DataException("hello")
+          } else Right(i)
+        })
+        .collect {
+          case Right(i) => i
+        }
+
+      val persistenceFlow = Flow[Int]
+        .map(i => {
+          println(s"come in ${i}")
+          i
+        })
+
+      source
+        .via(validingFlow)
+        .via(persistenceFlow)
+        .runWith(Sink.head)
+        .futureValue shouldBe 1
+
+    }
+
+    "http entity" ignore {
+      val data = Source
+        .single("""{"code":"ok"}""")
+        .map(ByteString.apply)
+      HttpEntity(
+        contentType = MediaTypes.`application/json`,
+        data = data
+      )
+    }
+
+    "stream collect" ignore {
+      Source(1 to 3)
+        .collect {
+          case 1 => 1
+        }
+        .runWith(Sink.seq)
+        .futureValue shouldBe Seq(1)
+    }
+
+    "dingding" ignore {
       DingDing.sendMessage(
         DingDing.MessageType.system,
         data = DingDing.MessageData(
