@@ -41,7 +41,7 @@ object DingDing extends JsonParse {
       data: MessageData,
       system: ActorSystem[_]
   ): Unit = {
-    if (!system.settings.config.getBoolean("app.dev")) {
+    if (system.settings.config.getBoolean("app.pro")) {
       implicit val ec = system.executionContext
       implicit val materializer = Materializer(system)
       val http = Http(system)
