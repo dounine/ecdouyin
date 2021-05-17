@@ -66,7 +66,7 @@ object OrderModel {
       apiKey: String,
       orderId: String,
       outOrder: String,
-      money: String,
+      money: Int,
       account: String,
       platform: PayPlatform,
       status: PayStatus,

@@ -233,7 +233,7 @@ class OrderService(system: ActorSystem[_]) extends EnumMappers {
                         apiKey = order.apiKey,
                         orderId = order.orderId.toString,
                         outOrder = order.outOrder,
-                        money = order.money.toString,
+                        money = order.money,
                         account = order.account,
                         platform = order.platform,
                         status = status,
