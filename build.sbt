@@ -16,7 +16,7 @@ lazy val app = (project in file("."))
     dockerExposedPorts := Seq(30000),
     dockerUsername := Option("dounine"),
     dockerEnvVars := Map("apiVersion" -> "1.0.0"),
-    dockerEntrypoint := Seq("/opt/docker/bin/ec-douyin"),
+    dockerEntrypoint := Seq("/opt/docker/bin/ecdouyin"),
     parallelExecution in Test := false,
     libraryDependencies ++= Seq(
       "com.sksamuel.elastic4s" %% "elastic4s-client-esjava" % elastic4sVersion,
