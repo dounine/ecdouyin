@@ -457,6 +457,18 @@ class OrderRouter(system: ActorSystem[_]) extends SuportRouter {
                                   .via(emitOrderToEngineFlow)
                               )
 
+                              //┌─────────┐     ┌─────────┐    ┌────────────┐   ┌─────────┐    ┌───────┐
+                              //│ source  ○────▷│  valid  ○───▷│persistence ○──▷│ engine  ○────□ client│
+                              //└────○────┘     └────○────┘    └─────○──────┘   └─────────┘    └────□──┘
+                              //     │               │               │                              │
+                              //     │               │               ▽                              │
+                              //     │               │          ┌─────────┐                         │
+                              //     └───────────────┴─────────▷│  merge  │                         │
+                              //                                └────○────┘                         │
+                              //                                     │                              │
+                              //                                     └──────────JsonData────────────┘
+                              //
+
                               source ~> partitionToSource ~> validBuilder ~> partitionToValidating ~> persistenceBuilder ~> partitionToPersistence ~> emitOrderToEngine ~> filter1 ~> merge
 
                               partitionToSource.out(
