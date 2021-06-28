@@ -1,9 +1,8 @@
 val akkaVersion = "2.6.14"
-val akkaHttpVersion = "10.2.3"
+val akkaHttpVersion = "10.2.4"
 val json4sVersion = "3.7.0-M6"
 val alpakka = "2.0.2"
 val elastic4sVersion = "7.12.0"
-
 
 lazy val app = (project in file("."))
   .enablePlugins(DockerPlugin, JavaServerAppPackaging)
@@ -46,6 +45,11 @@ lazy val app = (project in file("."))
       "org.json4s" %% "json4s-jackson" % json4sVersion,
       "org.json4s" %% "json4s-native" % json4sVersion,
       "org.json4s" %% "json4s-ext" % json4sVersion,
+      "org.sangria-graphql" %% "sangria" % "2.1.3",
+      "org.sangria-graphql" %% "sangria-circe" % "1.3.1",
+      "org.sangria-graphql" %% "sangria-slowlog" % "2.0.1",
+      "org.sangria-graphql" %% "sangria-akka-http-core" % "0.0.2",
+      "org.sangria-graphql" %% "sangria-akka-http-circe" % "0.0.2",
       "org.seleniumhq.selenium" % "selenium-java" % "3.141.59",
       "com.google.zxing" % "core" % "3.4.1",
       "com.google.zxing" % "javase" % "3.4.1",
@@ -58,11 +62,14 @@ lazy val app = (project in file("."))
       "com.chuusai" %% "shapeless" % "2.3.3",
       "io.underscore" %% "slickless" % "0.3.6",
       "io.altoo" %% "akka-kryo-serialization" % "2.0.1",
-      "de.heikoseeberger" %% "akka-http-circe" % "1.35.3",
-      "de.heikoseeberger" %% "akka-http-json4s" % "1.35.3",
+      "de.heikoseeberger" %% "akka-http-circe" % "1.36.0",
+      "de.heikoseeberger" %% "akka-http-json4s" % "1.36.0",
       "org.typelevel" %% "cats-core" % "2.6.0",
-      "io.circe" %% "circe-refined" % "0.14.0-M6",
-      "io.circe" %% "circe-generic" % "0.14.0-M6",
+      "io.circe" %% "circe-refined" % "0.13.0",
+      "io.circe" %% "circe-generic" % "0.13.0",
+      "io.circe" %% "circe-core" % "0.13.0",
+      "io.circe" %% "circe-parser" % "0.13.0",
+      "io.circe" %% "circe-optics" % "0.13.0",
       "com.esotericsoftware" % "kryo" % "5.0.3",
       "mysql" % "mysql-connector-java" % "8.0.22",
       "commons-codec" % "commons-codec" % "1.15",

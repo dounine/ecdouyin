@@ -27,7 +27,6 @@ object EcDouyin {
     implicit val materialize = SystemMaterializer(system).materializer
     implicit val executionContext = system.executionContext
 
-
     AkkaManagement(system).start()
     ClusterBootstrap(system).start()
 
@@ -41,7 +40,8 @@ object EcDouyin {
       new HealthRouter(system).route,
       new WebsocketRouter(system).route,
       new FileRouter(system).route,
-      new OrderRouter(system).route
+      new OrderRouter(system).route,
+      new GraphqlRouter(system).route
     )
 
     Http(system)
@@ -60,5 +60,4 @@ object EcDouyin {
       })
 
   }
-
 }

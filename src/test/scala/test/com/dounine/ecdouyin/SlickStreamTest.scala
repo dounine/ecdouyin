@@ -1,10 +1,13 @@
 package test.com.dounine.ecdouyin
 
 import akka.Done
-import akka.actor.testkit.typed.scaladsl.{LogCapturing, ScalaTestWithActorTestKit}
-import akka.stream.Materializer
+import akka.actor.testkit.typed.scaladsl.{
+  LogCapturing,
+  ScalaTestWithActorTestKit
+}
+import akka.stream.{Materializer, RestartSettings}
 import akka.stream.alpakka.slick.scaladsl.{Slick, SlickSession}
-import akka.stream.scaladsl.{Flow, Sink, Source}
+import akka.stream.scaladsl.{Flow, RestartSource, Sink, Source}
 import com.dounine.ecdouyin.model.models.{OrderModel, UserModel}
 import com.dounine.ecdouyin.model.types.service.{PayPlatform, PayStatus}
 import com.dounine.ecdouyin.service.OrderStream
@@ -19,7 +22,7 @@ import slick.sql.{FixedSqlAction, FixedSqlStreamingAction}
 
 import java.time.LocalDateTime
 import scala.concurrent.Future
-
+import scala.concurrent.duration._
 class SlickStreamTest
     extends ScalaTestWithActorTestKit(
       ConfigFactory
@@ -51,7 +54,35 @@ class SlickStreamTest
 
   "slick stream optimize" should {
 
-    "return id" in {
+    "list slidering" ignore {
+      val list = 1 to 10
+      list.sliding(4,3).foreach(tp => {
+        println(tp)
+      })
+    }
+
+    "restart source " ignore {
+      RestartSource
+        .onFailuresWithBackoff(
+          RestartSettings(1.seconds, 2.seconds, 0.2)
+            .withMaxRestarts(1, 1.seconds)
+        )(() => {
+          println("come in")
+          Source
+            .single(1)
+            .map(i => {
+              if (true) {
+                throw new Exception("eee")
+              }
+              i
+            })
+        })
+        .runWith(Sink.head)
+        .futureValue shouldBe 1
+
+    }
+
+    "return id" ignore {
       import slickSession.profile.api._
       val orderTable = TableQuery[OrderTable]
       val insertAndGetId =
@@ -71,11 +102,14 @@ class SlickStreamTest
         createTime = LocalDateTime.now()
       )
 
-      info(Source.single(order)
-        .via(OrderStream.createOrderMarginUser(system))
-        .runWith(Sink.head)
-        .futureValue.toString)
-
+      info(
+        Source
+          .single(order)
+          .via(OrderStream.createOrderMarginUser(system))
+          .runWith(Sink.head)
+          .futureValue
+          .toString
+      )
 
 //      val cc = Source.single(order)
 //        .via(Slick.flowWithPassThrough(o => {
@@ -96,7 +130,6 @@ class SlickStreamTest
 //      )
 //
 //      info(insert.futureValue.toString)
-
 
     }
 
