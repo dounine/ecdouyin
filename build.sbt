@@ -13,9 +13,16 @@ lazy val app = (project in file("."))
     scalaVersion := "2.13.4",
     dockerBaseImage := "openjdk:11.0.8-slim",
     dockerExposedPorts := Seq(30000),
-    dockerUsername := Option("dounine"),
+    dockerUsername  := sys.props.get("docker.username"),
+    dockerRepository := Some("dounine"),
     dockerEnvVars := Map("apiVersion" -> "1.0.0"),
     dockerEntrypoint := Seq("/opt/docker/bin/ecdouyin"),
+    dockerPermissionStrategy := DockerPermissionStrategy.Run,
+    dockerCommands ++= Seq(
+      Cmd("USER", "root"),
+      Cmd("RUN", "ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime"),
+      Cmd("RUN", "echo 'Asia/Shanghai' > /etc/timezone"),
+    ),
     parallelExecution in Test := false,
     libraryDependencies ++= Seq(
       "com.sksamuel.elastic4s" %% "elastic4s-client-esjava" % elastic4sVersion,
